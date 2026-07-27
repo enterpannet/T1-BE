@@ -42,6 +42,8 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
+import com.getmoney.app.data.cloudinary.CloudUploadStore
+import com.getmoney.app.data.cloudinary.CloudinaryUploader
 import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
@@ -72,6 +74,8 @@ fun AppNav(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipImageStore: SlipImageStore,
+    cloudUploadStore: CloudUploadStore,
+    cloudinaryUploader: CloudinaryUploader,
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
@@ -93,6 +97,8 @@ fun AppNav(
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
             slipImageStore = slipImageStore,
+            cloudUploadStore = cloudUploadStore,
+            cloudinaryUploader = cloudinaryUploader,
             slipIntake = slipIntake,
             autoScanStore = autoScanStore,
             autoScanCoordinator = autoScanCoordinator,
@@ -143,6 +149,8 @@ private fun MainShell(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipImageStore: SlipImageStore,
+    cloudUploadStore: CloudUploadStore,
+    cloudinaryUploader: CloudinaryUploader,
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
@@ -326,10 +334,18 @@ private fun MainShell(
                 AddSlipScreen(
                     slipIntake = slipIntake,
                     transactionRepository = transactionRepository,
+                    slipImageStore = slipImageStore,
+                    cloudUploadStore = cloudUploadStore,
+                    cloudinaryUploader = cloudinaryUploader,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = onShareUriConsumed,
                     autoScanCoordinator = autoScanCoordinator,
                     startInQueueMode = startInQueueMode,
+                    onUploadFailed = { message ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(message)
+                        }
+                    },
                     onDone = { navController.popBackStack() },
                 )
             }

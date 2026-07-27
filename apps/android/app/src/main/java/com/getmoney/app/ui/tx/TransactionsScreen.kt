@@ -98,6 +98,7 @@ fun TransactionsScreen(
                     transactionRepository.deleteTransaction(transaction.id)
                         .fold(
                             onSuccess = {
+                                slipImageStore.delete(transaction.id)
                                 deletingTransaction = null
                                 loadTransactions()
                             },

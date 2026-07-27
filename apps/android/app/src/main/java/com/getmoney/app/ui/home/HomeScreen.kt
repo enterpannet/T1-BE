@@ -122,6 +122,7 @@ fun HomeScreen(
                     transactionRepository.deleteTransaction(transaction.id)
                         .fold(
                             onSuccess = {
+                                slipImageStore.delete(transaction.id)
                                 deletingTransaction = null
                                 loadSummary()
                             },

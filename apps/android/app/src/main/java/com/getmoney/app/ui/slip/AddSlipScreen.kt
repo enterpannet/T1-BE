@@ -35,6 +35,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.getmoney.app.autoscan.AutoScanCoordinator
+import com.getmoney.app.data.cloudinary.CloudUploadStore
+import com.getmoney.app.data.cloudinary.CloudinaryConfig
+import com.getmoney.app.data.cloudinary.CloudinaryUploader
+import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.DuplicateSlipException
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipDraft
@@ -58,11 +62,15 @@ private enum class AddSlipStep {
 fun AddSlipScreen(
     slipIntake: SlipIntake,
     transactionRepository: TransactionRepository,
+    slipImageStore: SlipImageStore,
+    cloudUploadStore: CloudUploadStore,
+    cloudinaryUploader: CloudinaryUploader,
     onDone: () -> Unit,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
     autoScanCoordinator: AutoScanCoordinator? = null,
     startInQueueMode: Boolean = false,
+    onUploadFailed: (String) -> Unit = {},
 ) {
     val isQueueMode = startInQueueMode && autoScanCoordinator != null
     val queue by autoScanCoordinator?.queue?.collectAsState()
@@ -84,12 +92,13 @@ fun AddSlipScreen(
     var note by remember { mutableStateOf("") }
     var spentAtIso by remember { mutableStateOf(defaultSpentAtIso()) }
     var readSourceHint by remember { mutableStateOf<String?>(null) }
+    var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    fun applyDraft(draft: SlipDraft, source: SlipIntake.Source) {
+    fun applyDraft(draft: SlipDraft, source: SlipIntake.Source, imageUri: Uri? = null) {
         isManualEntry = false
         amount = draft.amount
         bank = draft.bank.orEmpty()
@@ -100,6 +109,7 @@ fun AddSlipScreen(
             SlipIntake.Source.Qr -> "อ่านจาก QR บนสลิป"
             SlipIntake.Source.Ocr -> "อ่านจากข้อความบนสลิป (OCR)"
         }
+        pendingImageUri = imageUri
         step = AddSlipStep.Confirm
     }
 
@@ -111,6 +121,7 @@ fun AddSlipScreen(
         note = ""
         spentAtIso = defaultSpentAtIso()
         readSourceHint = null
+        pendingImageUri = null
         error = null
         step = AddSlipStep.Confirm
     }
@@ -122,7 +133,7 @@ fun AddSlipScreen(
         coordinator.skipCurrent()
         val next = coordinator.peekCurrent()
         if (next != null) {
-            applyDraft(next.draft, next.source)
+            applyDraft(next.draft, next.source, imageUri = next.uri)
             error = null
         } else {
             onDone()
@@ -134,10 +145,24 @@ fun AddSlipScreen(
         coordinator.removeCurrentAfterSave()
         val next = coordinator.peekCurrent()
         if (next != null) {
-            applyDraft(next.draft, next.source)
+            applyDraft(next.draft, next.source, imageUri = next.uri)
             error = null
         } else {
             onDone()
+        }
+    }
+
+    suspend fun persistSlipImage(transactionId: String, sourceUri: Uri) {
+        val file = slipImageStore.saveFromUri(transactionId, sourceUri) ?: return
+        if (cloudUploadStore.isEnabled() && CloudinaryConfig.isConfigured) {
+            cloudinaryUploader.upload(file).fold(
+                onSuccess = { url ->
+                    transactionRepository.updateImageUrl(transactionId, url)
+                },
+                onFailure = { throwable ->
+                    onUploadFailed(throwable.message ?: "Cloud upload failed")
+                },
+            )
         }
     }
 
@@ -148,7 +173,7 @@ fun AddSlipScreen(
         scope.launch {
             try {
                 val outcome = slipIntake.process(uri)
-                applyDraft(outcome.draft, outcome.source)
+                applyDraft(outcome.draft, outcome.source, imageUri = uri)
             } catch (throwable: Throwable) {
                 error = throwable.message ?: "อ่านสลิปไม่สำเร็จ"
                 step = AddSlipStep.Pick
@@ -183,7 +208,7 @@ fun AddSlipScreen(
             return@LaunchedEffect
         }
         queueInitialTotal = initial.size
-        coordinator.peekCurrent()?.let { applyDraft(it.draft, it.source) } ?: onDone()
+        coordinator.peekCurrent()?.let { applyDraft(it.draft, it.source, imageUri = it.uri) } ?: onDone()
     }
 
     Column(
@@ -337,7 +362,11 @@ fun AddSlipScreen(
                                 )
                             }
                             saveResult.fold(
-                                onSuccess = {
+                                onSuccess = { response ->
+                                    val imageUri = pendingImageUri
+                                    if (!isManualEntry && imageUri != null) {
+                                        persistSlipImage(response.id, imageUri)
+                                    }
                                     if (isQueueMode) {
                                         advanceQueueAfterSave()
                                     } else {

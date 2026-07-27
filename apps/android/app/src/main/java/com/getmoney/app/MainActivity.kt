@@ -20,6 +20,8 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.GallerySlipScanner
 import com.getmoney.app.autoscan.SlipIntakeReader
+import com.getmoney.app.data.cloudinary.CloudUploadStore
+import com.getmoney.app.data.cloudinary.CloudinaryUploader
 import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
@@ -47,6 +49,8 @@ class MainActivity : ComponentActivity() {
             transactionApi = apiClient.createService(TransactionApi::class.java),
         )
         val slipImageStore = SlipImageStore(applicationContext)
+        val cloudUploadStore = CloudUploadStore(applicationContext)
+        val cloudinaryUploader = CloudinaryUploader()
         val slipIntake = SlipIntake(
             qrScanner = SlipQrScanner(applicationContext),
             ocr = SlipOcr(applicationContext),
@@ -66,6 +70,8 @@ class MainActivity : ComponentActivity() {
                     budgetRepository = budgetRepository,
                     transactionRepository = transactionRepository,
                     slipImageStore = slipImageStore,
+                    cloudUploadStore = cloudUploadStore,
+                    cloudinaryUploader = cloudinaryUploader,
                     slipIntake = slipIntake,
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,
