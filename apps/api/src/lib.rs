@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod budget;
 pub mod config;
 pub mod db;
 pub mod entities;
@@ -22,5 +23,19 @@ pub fn app(state: AppState) -> Router {
         .route("/auth/refresh", post(auth::handlers::refresh))
         .route("/auth/logout", post(auth::handlers::logout))
         .route("/auth/logout-all", post(auth::handlers::logout_all))
+        .route(
+            "/budget/months/{month}",
+            get(budget::handlers::get_month).put(budget::handlers::put_month),
+        )
+        .route(
+            "/budget/months/{month}/fixed-expenses",
+            get(budget::handlers::list_fixed_expenses).post(budget::handlers::create_fixed_expense),
+        )
+        .route(
+            "/budget/months/{month}/fixed-expenses/{expense_id}",
+            get(budget::handlers::get_fixed_expense)
+                .patch(budget::handlers::patch_fixed_expense)
+                .delete(budget::handlers::delete_fixed_expense),
+        )
         .with_state(state)
 }
