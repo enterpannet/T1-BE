@@ -16,10 +16,23 @@ class SlipOcr(
 ) {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
+    /**
+     * Returns OCR text with line breaks preserved (better for amount/keyword pairing).
+     * ML Kit Latin model still reads Latin digits/words on Thai slips; Thai glyphs may be noisy.
+     */
     suspend fun recognize(uri: Uri): String = withContext(Dispatchers.IO) {
         val image = InputImage.fromFilePath(context, uri)
         val result = recognizer.process(image).awaitTask()
-        result.text
+        // Prefer structured lines over flattened text blob
+        val lines = result.textBlocks
+            .flatMap { it.lines }
+            .map { it.text.trim() }
+            .filter { it.isNotEmpty() }
+        if (lines.isNotEmpty()) {
+            lines.joinToString("\n")
+        } else {
+            result.text
+        }
     }
 
     private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T =

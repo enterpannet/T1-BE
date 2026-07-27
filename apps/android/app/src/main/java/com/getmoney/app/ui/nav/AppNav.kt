@@ -23,7 +23,7 @@ import androidx.navigation.compose.rememberNavController
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.tx.TransactionRepository
-import com.getmoney.app.ocr.SlipOcr
+import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ui.account.AccountScreen
 import com.getmoney.app.ui.auth.LoginScreen
 import com.getmoney.app.ui.auth.RegisterScreen
@@ -46,7 +46,7 @@ fun AppNav(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
-    slipOcr: SlipOcr,
+    slipIntake: SlipIntake,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
 ) {
@@ -58,7 +58,7 @@ fun AppNav(
             authRepository = authRepository,
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
-            slipOcr = slipOcr,
+            slipIntake = slipIntake,
             sharedImageUri = sharedImageUri,
             onShareUriConsumed = onShareUriConsumed,
         )
@@ -105,7 +105,7 @@ private fun MainShell(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
-    slipOcr: SlipOcr,
+    slipIntake: SlipIntake,
     sharedImageUri: Uri?,
     onShareUriConsumed: () -> Unit,
 ) {
@@ -168,7 +168,7 @@ private fun MainShell(
             }
             composable("add_slip") {
                 AddSlipScreen(
-                    slipOcr = slipOcr,
+                    slipIntake = slipIntake,
                     transactionRepository = transactionRepository,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = onShareUriConsumed,

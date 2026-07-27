@@ -17,7 +17,9 @@ import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.auth.TokenStore
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.tx.TransactionRepository
+import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ocr.SlipOcr
+import com.getmoney.app.ocr.SlipQrScanner
 import com.getmoney.app.ui.nav.AppNav
 import com.getmoney.app.ui.theme.GetMoneyTheme
 
@@ -39,7 +41,10 @@ class MainActivity : ComponentActivity() {
         val transactionRepository = TransactionRepository(
             transactionApi = apiClient.createService(TransactionApi::class.java),
         )
-        val slipOcr = SlipOcr(applicationContext)
+        val slipIntake = SlipIntake(
+            qrScanner = SlipQrScanner(applicationContext),
+            ocr = SlipOcr(applicationContext),
+        )
 
         setContent {
             GetMoneyTheme {
@@ -47,7 +52,7 @@ class MainActivity : ComponentActivity() {
                     authRepository = authRepository,
                     budgetRepository = budgetRepository,
                     transactionRepository = transactionRepository,
-                    slipOcr = slipOcr,
+                    slipIntake = slipIntake,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = { sharedImageUri = null },
                 )

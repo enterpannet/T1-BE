@@ -12,18 +12,22 @@ android {
         applicationId = "com.getmoney.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
+        versionCode = 5
+        versionName = "1.4"
+        buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
         }
     }
 
@@ -64,6 +68,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     testImplementation("junit:junit:4.13.2")
 

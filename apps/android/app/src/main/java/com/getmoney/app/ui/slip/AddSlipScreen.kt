@@ -35,8 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.getmoney.app.data.tx.DuplicateSlipException
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipDraft
-import com.getmoney.app.ocr.SlipOcr
-import com.getmoney.app.ocr.SlipParser
+import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
@@ -53,7 +52,7 @@ private enum class AddSlipStep {
 
 @Composable
 fun AddSlipScreen(
-    slipOcr: SlipOcr,
+    slipIntake: SlipIntake,
     transactionRepository: TransactionRepository,
     onDone: () -> Unit,
     sharedImageUri: Uri? = null,
@@ -66,18 +65,23 @@ fun AddSlipScreen(
     var reference by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var spentAtIso by remember { mutableStateOf(defaultSpentAtIso()) }
+    var readSourceHint by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    fun applyDraft(draft: SlipDraft) {
+    fun applyDraft(draft: SlipDraft, source: SlipIntake.Source) {
         isManualEntry = false
         amount = draft.amount
         bank = draft.bank.orEmpty()
         reference = draft.reference.orEmpty()
         note = draft.note.orEmpty()
         spentAtIso = draft.spentAtIso ?: defaultSpentAtIso()
+        readSourceHint = when (source) {
+            SlipIntake.Source.Qr -> "อ่านจาก QR บนสลิป"
+            SlipIntake.Source.Ocr -> "อ่านจากข้อความบนสลิป (OCR)"
+        }
         step = AddSlipStep.Confirm
     }
 
@@ -88,6 +92,7 @@ fun AddSlipScreen(
         reference = ""
         note = ""
         spentAtIso = defaultSpentAtIso()
+        readSourceHint = null
         error = null
         step = AddSlipStep.Confirm
     }
@@ -97,12 +102,13 @@ fun AddSlipScreen(
     fun processImageUri(uri: Uri) {
         step = AddSlipStep.Processing
         error = null
+        readSourceHint = null
         scope.launch {
             try {
-                val raw = slipOcr.recognize(uri)
-                applyDraft(SlipParser.parse(raw))
+                val outcome = slipIntake.process(uri)
+                applyDraft(outcome.draft, outcome.source)
             } catch (throwable: Throwable) {
-                error = throwable.message ?: "OCR failed"
+                error = throwable.message ?: "อ่านสลิปไม่สำเร็จ"
                 step = AddSlipStep.Pick
             }
         }
@@ -140,8 +146,8 @@ fun AddSlipScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "OCR runs on your device. Images are never uploaded. " +
-                "Works best when amounts and references use Latin digits (0–9).",
+            text = "อ่าน QR บนสลิปก่อน แล้วค่อย OCR เป็น fallback — ทั้งหมดบนเครื่อง " +
+                "ไม่ส่งรูปขึ้นเซิร์ฟเวอร์ โปรดยืนยันจำนวนเงินก่อนบันทึก",
             style = MaterialTheme.typography.bodyMedium,
             color = InkMuted,
         )
@@ -179,7 +185,7 @@ fun AddSlipScreen(
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Reading slip…",
+                        text = "กำลังอ่านสลิป (QR → OCR)…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = InkMuted,
                     )
@@ -187,6 +193,14 @@ fun AddSlipScreen(
             }
 
             AddSlipStep.Confirm -> {
+                readSourceHint?.let { hint ->
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = InkMuted,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
