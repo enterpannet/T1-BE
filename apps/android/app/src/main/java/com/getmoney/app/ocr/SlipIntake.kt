@@ -4,7 +4,8 @@ import android.net.Uri
 
 /**
  * Production slip intake: QR (EMV/PromptPay) first, then text OCR fallback.
- * Images never leave the device.
+ * When QR wins on amount, still OCR to fill bank / datetime / reference gaps.
+ * Images never leave the device during intake.
  */
 class SlipIntake(
     private val qrScanner: SlipQrScanner,
@@ -26,11 +27,18 @@ class SlipIntake(
         val payloads = runCatching { qrScanner.scanPayloads(uri) }.getOrDefault(emptyList())
         for (payload in payloads) {
             val parsed = EmvQrParser.parse(payload) ?: continue
-            val draft = EmvQrParser.toSlipDraft(parsed) ?: continue
-            return Outcome(draft = draft, source = Source.Qr, qrPayload = payload)
+            val qrDraft = EmvQrParser.toSlipDraft(parsed) ?: continue
+            val rawText = runCatching { ocr.recognize(uri) }.getOrNull()
+            val ocrDraft = rawText?.let { SlipParser.parse(it) }
+            val merged = enrichSlipDraftFromOcr(qrDraft, ocrDraft)
+            return Outcome(
+                draft = merged,
+                source = Source.Qr,
+                qrPayload = payload,
+                rawText = rawText,
+            )
         }
 
-        // QR found but no amount — still try OCR; attach QR reference if useful
         val qrRef = payloads.firstNotNullOfOrNull { payload ->
             EmvQrParser.parse(payload)?.reference
         }
@@ -45,4 +53,15 @@ class SlipIntake(
         }
         return Outcome(draft = draft, source = Source.Ocr, rawText = rawText)
     }
+}
+
+/** Fill blank QR fields from OCR parse (bank / datetime / reference / note). */
+internal fun enrichSlipDraftFromOcr(qrDraft: SlipDraft, ocrDraft: SlipDraft?): SlipDraft {
+    if (ocrDraft == null) return qrDraft
+    return qrDraft.copy(
+        bank = qrDraft.bank?.takeIf { it.isNotBlank() } ?: ocrDraft.bank,
+        spentAtIso = qrDraft.spentAtIso?.takeIf { it.isNotBlank() } ?: ocrDraft.spentAtIso,
+        reference = qrDraft.reference?.takeIf { it.isNotBlank() } ?: ocrDraft.reference,
+        note = qrDraft.note?.takeIf { it.isNotBlank() } ?: ocrDraft.note,
+    )
 }

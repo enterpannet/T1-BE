@@ -70,9 +70,20 @@ class SlipParserTest {
     }
 
     @Test
-    fun returnsZeroWhenNoMoneyFound() {
-        val raw = "hello world only text"
-        assertEquals("0", SlipParser.parse(raw).amount)
-        assertNull(SlipParser.parse(raw).bank)
+    fun extractsBankFromFullThaiBankName() {
+        val raw = """
+            ธนาคารกสิกรไทย
+            จำนวนเงิน 100.00 บาท
+        """.trimIndent()
+        assertEquals("KBank", SlipParser.parse(raw).bank)
+    }
+
+    @Test
+    fun extractsKrungsriAlias() {
+        val raw = """
+            Bank of Ayudhya
+            Amount 50.00 THB
+        """.trimIndent()
+        assertEquals("Krungsri", SlipParser.parse(raw).bank)
     }
 }

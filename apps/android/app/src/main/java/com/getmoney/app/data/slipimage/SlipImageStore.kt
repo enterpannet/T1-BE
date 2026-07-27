@@ -2,6 +2,8 @@ package com.getmoney.app.data.slipimage
 
 import android.content.ContentResolver
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +14,8 @@ import java.io.InputStream
 class SlipImageStore private constructor(
     private val rootDir: File,
     private val contentResolver: ContentResolver?,
+    private val maxSidePx: Int = DEFAULT_MAX_SIDE_PX,
+    private val jpegQuality: Int = DEFAULT_JPEG_QUALITY,
 ) {
     constructor(rootDir: File) : this(rootDir, null)
 
@@ -30,8 +34,9 @@ class SlipImageStore private constructor(
                 return@withContext null
             }
             input.use { stream ->
-                temp.outputStream().use { output ->
-                    stream.copyTo(output)
+                if (!compressToJpeg(stream, temp, maxSidePx, jpegQuality)) {
+                    temp.delete()
+                    return@withContext null
                 }
             }
             destination.delete()
@@ -65,5 +70,45 @@ class SlipImageStore private constructor(
             return if (file.exists()) file.inputStream() else null
         }
         return contentResolver?.openInputStream(source)
+    }
+
+    companion object {
+        const val DEFAULT_MAX_SIDE_PX = 1280
+        const val DEFAULT_JPEG_QUALITY = 75
+
+        internal fun compressToJpeg(
+            input: InputStream,
+            output: File,
+            maxSidePx: Int = DEFAULT_MAX_SIDE_PX,
+            jpegQuality: Int = DEFAULT_JPEG_QUALITY,
+        ): Boolean {
+            val original = BitmapFactory.decodeStream(input) ?: return false
+            try {
+                val scaled = scaleDown(original, maxSidePx)
+                try {
+                    output.outputStream().use { out ->
+                        if (!scaled.compress(Bitmap.CompressFormat.JPEG, jpegQuality, out)) {
+                            return false
+                        }
+                    }
+                    return output.exists() && output.length() > 0L
+                } finally {
+                    if (scaled !== original) scaled.recycle()
+                }
+            } finally {
+                original.recycle()
+            }
+        }
+
+        internal fun scaleDown(source: Bitmap, maxSidePx: Int): Bitmap {
+            val w = source.width
+            val h = source.height
+            val longest = maxOf(w, h)
+            if (longest <= maxSidePx || maxSidePx <= 0) return source
+            val scale = maxSidePx.toFloat() / longest.toFloat()
+            val nw = (w * scale).toInt().coerceAtLeast(1)
+            val nh = (h * scale).toInt().coerceAtLeast(1)
+            return Bitmap.createScaledBitmap(source, nw, nh, true)
+        }
     }
 }
