@@ -1,4 +1,5 @@
 use getmoney_api::{app, config::Config, db, state::AppState};
+use migration::{Migrator, MigratorTrait};
 
 #[tokio::main]
 async fn main() {
@@ -7,6 +8,9 @@ async fn main() {
         .init();
     let config = Config::from_env();
     let db = db::connect(&config.database_url).await;
+    Migrator::up(&db, None)
+        .await
+        .expect("failed to apply database migrations");
     let bind = config.bind_addr.clone();
     let state = AppState { db, config };
     let listener = tokio::net::TcpListener::bind(&bind).await.unwrap();

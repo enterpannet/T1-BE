@@ -797,6 +797,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "jsonwebtoken",
+ "migration",
  "password-hash",
  "rand",
  "rust_decimal",
@@ -1309,6 +1310,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "migration"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sea-orm-migration",
 ]
 
 [[package]]
@@ -1946,6 +1955,9 @@ dependencies = [
  "dotenvy",
  "glob",
  "regex",
+ "sea-schema",
+ "sqlx",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2036,7 +2048,9 @@ checksum = "2239ff574c04858ca77485f112afea1a15e53135d3097d0c86509cef1def1338"
 dependencies = [
  "futures",
  "sea-query",
+ "sea-query-binder",
  "sea-schema-derive",
+ "sqlx",
 ]
 
 [[package]]
