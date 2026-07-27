@@ -76,6 +76,18 @@ fun AddSlipScreen(
         step = AddSlipStep.Confirm
     }
 
+    fun enterManually() {
+        amount = ""
+        bank = ""
+        reference = ""
+        note = ""
+        spentAtIso = defaultSpentAtIso()
+        error = null
+        step = AddSlipStep.Confirm
+    }
+
+    val amountValid = isValidSlipAmount(amount)
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
@@ -113,7 +125,8 @@ fun AddSlipScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "OCR runs on your device. Images are never uploaded.",
+            text = "OCR runs on your device. Images are never uploaded. " +
+                "Works best when amounts and references use Latin digits (0–9).",
             style = MaterialTheme.typography.bodyMedium,
             color = InkMuted,
         )
@@ -133,6 +146,13 @@ fun AddSlipScreen(
                     elevation = CarbonButtonDefaults.primaryButtonElevation(),
                 ) {
                     Text("Pick slip image")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = { enterManually() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Enter manually")
                 }
             }
 
@@ -158,6 +178,12 @@ fun AddSlipScreen(
                     label = { Text("Amount") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    isError = amount.isNotBlank() && !amountValid,
+                    supportingText = if (amount.isNotBlank() && !amountValid) {
+                        { Text("Enter an amount greater than 0") }
+                    } else {
+                        null
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     colors = OutlinedTextFieldDefaults.colors(),
                 )
@@ -221,7 +247,7 @@ fun AddSlipScreen(
                             saving = false
                         }
                     },
-                    enabled = !saving && amount.isNotBlank(),
+                    enabled = !saving && amountValid,
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small,
                     colors = CarbonButtonDefaults.primaryButtonColors(),
@@ -266,4 +292,12 @@ fun AddSlipScreen(
 private fun defaultSpentAtIso(): String {
     val now = ZonedDateTime.now(ZoneId.of("Asia/Bangkok"))
     return now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+}
+
+internal fun isValidSlipAmount(raw: String): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isBlank()) return false
+    val normalized = trimmed.replace(",", "")
+    val value = normalized.toDoubleOrNull() ?: return false
+    return value > 0.0
 }
