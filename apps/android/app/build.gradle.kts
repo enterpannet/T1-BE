@@ -4,6 +4,31 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun loadDotEnv(file: java.io.File): Map<String, String> {
+    if (!file.exists()) return emptyMap()
+    return file.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+        .associate { line ->
+            val idx = line.indexOf('=')
+            line.substring(0, idx).trim() to line.substring(idx + 1).trim().trim('"')
+        }
+}
+
+val apiEnv: Map<String, String> = loadDotEnv(rootProject.file("../api/.env"))
+
+fun envOrProp(name: String, vararg aliases: String): String {
+    val fromProp = project.findProperty(name) as String?
+    if (!fromProp.isNullOrBlank()) return fromProp
+    val fromEnv = apiEnv[name]
+    if (!fromEnv.isNullOrBlank()) return fromEnv
+    for (alias in aliases) {
+        val value = apiEnv[alias]
+        if (!value.isNullOrBlank()) return value
+    }
+    return ""
+}
+
 android {
     namespace = "com.getmoney.app"
     compileSdk = 35
@@ -12,19 +37,13 @@ android {
         applicationId = "com.getmoney.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
         buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
-        buildConfigField(
-            "String",
-            "CLOUDINARY_CLOUD_NAME",
-            "\"${project.findProperty("CLOUDINARY_CLOUD_NAME") ?: ""}\"",
-        )
-        buildConfigField(
-            "String",
-            "CLOUDINARY_UPLOAD_PRESET",
-            "\"${project.findProperty("CLOUDINARY_UPLOAD_PRESET") ?: ""}\"",
-        )
+        val cloudinaryCloudName = envOrProp("CLOUDINARY_CLOUD_NAME")
+        val cloudinaryUploadPreset = envOrProp("CLOUDINARY_UPLOAD_PRESET", "UPLOAD_PRESET")
+        buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"$cloudinaryCloudName\"")
+        buildConfigField("String", "CLOUDINARY_UPLOAD_PRESET", "\"$cloudinaryUploadPreset\"")
     }
 
     buildTypes {
