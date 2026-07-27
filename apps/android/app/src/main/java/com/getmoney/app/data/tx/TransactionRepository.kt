@@ -47,6 +47,35 @@ class TransactionRepository(
             note = note,
         )
 
+    suspend fun listTransactions(
+        from: String? = null,
+        to: String? = null,
+    ): Result<List<TransactionResponse>> =
+        try {
+            Result.success(transactionApi.list(from = from, to = to))
+        } catch (error: HttpException) {
+            Result.failure(Exception(parseErrorMessage(error)))
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+
+    suspend fun updateImageUrl(
+        id: String,
+        url: String,
+    ): Result<TransactionResponse> =
+        try {
+            Result.success(
+                transactionApi.patch(
+                    transactionId = id,
+                    body = PatchTransactionRequest(imageUrl = url),
+                ),
+            )
+        } catch (error: HttpException) {
+            Result.failure(Exception(parseErrorMessage(error)))
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+
     suspend fun updateTransaction(
         transactionId: String,
         amount: String? = null,

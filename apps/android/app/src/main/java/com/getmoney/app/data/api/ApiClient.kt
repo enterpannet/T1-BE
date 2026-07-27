@@ -20,6 +20,7 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface AuthApi {
     @POST("auth/register")
@@ -69,6 +70,12 @@ interface BudgetApi {
 }
 
 interface TransactionApi {
+    @GET("transactions")
+    suspend fun list(
+        @Query("from") from: String? = null,
+        @Query("to") to: String? = null,
+    ): List<TransactionResponse>
+
     @POST("transactions")
     suspend fun create(@Body body: CreateTransactionRequest): TransactionResponse
 

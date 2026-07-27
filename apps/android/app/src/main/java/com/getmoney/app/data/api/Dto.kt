@@ -63,6 +63,7 @@ data class CreateTransactionRequest(
     val bank: String? = null,
     val note: String? = null,
     val reference: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
 )
 
 data class PatchTransactionRequest(
@@ -71,6 +72,7 @@ data class PatchTransactionRequest(
     val source: String? = null,
     val bank: String? = null,
     val note: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
 )
 
 data class TransactionResponse(
@@ -81,6 +83,7 @@ data class TransactionResponse(
     val bank: String?,
     val note: String?,
     @SerializedName("created_at") val createdAt: String,
+    @SerializedName("image_url") val imageUrl: String? = null,
 )
 
 data class TodaySummaryResponse(
