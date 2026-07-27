@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: getmoney
+      POSTGRES_PASSWORD: getmoney
+      POSTGRES_DB: getmoney
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
