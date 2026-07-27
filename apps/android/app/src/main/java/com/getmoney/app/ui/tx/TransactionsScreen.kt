@@ -149,6 +149,9 @@ fun TransactionsScreen(
 
             else -> {
                 LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(transactions, key = { it.id }) { transaction ->
