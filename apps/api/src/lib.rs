@@ -5,6 +5,7 @@ pub mod db;
 pub mod entities;
 pub mod error;
 pub mod state;
+pub mod transactions;
 
 use axum::{
     routing::{get, post},
@@ -36,6 +37,16 @@ pub fn app(state: AppState) -> Router {
             get(budget::handlers::get_fixed_expense)
                 .patch(budget::handlers::patch_fixed_expense)
                 .delete(budget::handlers::delete_fixed_expense),
+        )
+        .route(
+            "/transactions",
+            get(transactions::handlers::list_transactions)
+                .post(transactions::handlers::create_transaction),
+        )
+        .route(
+            "/transactions/{transaction_id}",
+            axum::routing::patch(transactions::handlers::patch_transaction)
+                .delete(transactions::handlers::delete_transaction),
         )
         .with_state(state)
 }
