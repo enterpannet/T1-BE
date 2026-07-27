@@ -56,4 +56,34 @@ class GallerySlipScanner(context: Context) : GallerySlipScannerReader {
         }
         results
     }
+
+    suspend fun listBuckets(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        val projection = arrayOf(
+            MediaStore.Images.Media.BUCKET_ID,
+            MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+        )
+        val seen = linkedSetOf<String>()
+        val results = mutableListOf<Pair<String, String>>()
+
+        contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} ASC",
+        )?.use { cursor ->
+            val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
+            val displayNameCol =
+                cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+
+            while (cursor.moveToNext() && results.size < 100) {
+                val bucketId = cursor.getString(bucketIdCol) ?: continue
+                if (!seen.add(bucketId)) continue
+                val displayName = cursor.getString(displayNameCol)?.takeIf { it.isNotBlank() }
+                    ?: bucketId
+                results.add(bucketId to displayName)
+            }
+        }
+        results
+    }
 }

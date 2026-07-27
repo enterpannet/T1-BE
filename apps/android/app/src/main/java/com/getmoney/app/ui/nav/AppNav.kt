@@ -14,12 +14,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -80,6 +85,7 @@ fun AppNav(
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
             slipIntake = slipIntake,
+            autoScanStore = autoScanStore,
             autoScanCoordinator = autoScanCoordinator,
             sharedImageUri = sharedImageUri,
             onShareUriConsumed = onShareUriConsumed,
@@ -128,6 +134,7 @@ private fun MainShell(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipIntake: SlipIntake,
+    autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
     sharedImageUri: Uri?,
     onShareUriConsumed: () -> Unit,
@@ -137,25 +144,53 @@ private fun MainShell(
     val currentRoute = backStackEntry?.destination?.route?.substringBefore("?")
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val queue by autoScanCoordinator.queue.collectAsState()
     val bannerDismissed by autoScanCoordinator.bannerDismissed.collectAsState()
     val pendingSlipCount = if (!bannerDismissed) queue.size else 0
+    var pendingAccountScanNow by remember { mutableStateOf(false) }
     val photoPermission = if (Build.VERSION.SDK_INT >= 33) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
+    val hasPhotoPermission = ContextCompat.checkSelfPermission(context, photoPermission) ==
+        PackageManager.PERMISSION_GRANTED
+
+    fun handleScanNowComplete(foundCount: Int) {
+        if (foundCount > 0) {
+            navController.navigate("today") {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("No new slips found")
+            }
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        scope.launch { autoScanCoordinator.runScanIfNeeded(granted) }
+        scope.launch {
+            if (pendingAccountScanNow) {
+                pendingAccountScanNow = false
+                if (granted) {
+                    autoScanCoordinator.runScanNow(true)
+                    handleScanNowComplete(autoScanCoordinator.queue.value.size)
+                }
+            } else {
+                autoScanCoordinator.runScanIfNeeded(granted)
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(context, photoPermission) ==
-            PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (hasPhotoPermission) {
             autoScanCoordinator.runScanIfNeeded(true)
         } else {
             permissionLauncher.launch(photoPermission)
@@ -171,6 +206,7 @@ private fun MainShell(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (currentRoute != "add_slip") {
                 NavigationBar {
@@ -250,7 +286,17 @@ private fun MainShell(
                 BudgetScreen(budgetRepository = budgetRepository)
             }
             composable("account") {
-                AccountScreen(authRepository = authRepository)
+                AccountScreen(
+                    authRepository = authRepository,
+                    autoScanStore = autoScanStore,
+                    autoScanCoordinator = autoScanCoordinator,
+                    hasPhotoPermission = hasPhotoPermission,
+                    onRequestPhotoPermission = {
+                        pendingAccountScanNow = true
+                        permissionLauncher.launch(photoPermission)
+                    },
+                    onScanNowComplete = ::handleScanNowComplete,
+                )
             }
         }
     }
