@@ -3,6 +3,7 @@ package com.getmoney.app.data.slipimage
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -20,16 +21,30 @@ class SlipImageStore private constructor(
         get() = rootDir.resolve("slips")
 
     suspend fun saveFromUri(transactionId: String, source: Uri): File? = withContext(Dispatchers.IO) {
+        slipsDir.mkdirs()
+        val destination = slipsDir.resolve("$transactionId.jpg")
+        val temp = File.createTempFile("$transactionId-", ".jpg.tmp", slipsDir)
         try {
-            slipsDir.mkdirs()
-            val destination = slipsDir.resolve("$transactionId.jpg")
-            openInputStream(source)?.use { input ->
-                destination.outputStream().use { output ->
-                    input.copyTo(output)
+            val input = openInputStream(source) ?: run {
+                temp.delete()
+                return@withContext null
+            }
+            input.use { stream ->
+                temp.outputStream().use { output ->
+                    stream.copyTo(output)
                 }
-            } ?: return@withContext null
+            }
+            destination.delete()
+            if (!temp.renameTo(destination)) {
+                temp.delete()
+                return@withContext null
+            }
             destination
+        } catch (e: CancellationException) {
+            temp.delete()
+            throw e
         } catch (_: Exception) {
+            temp.delete()
             null
         }
     }
