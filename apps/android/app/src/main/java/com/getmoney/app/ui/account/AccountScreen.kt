@@ -37,6 +37,8 @@ import com.getmoney.app.autoscan.AutoScanCursor
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.GallerySlipScanner
 import com.getmoney.app.data.auth.AuthRepository
+import com.getmoney.app.data.cloudinary.CloudUploadStore
+import com.getmoney.app.data.cloudinary.CloudinaryConfig
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.InkMuted
 import kotlinx.coroutines.launch
@@ -47,6 +49,7 @@ fun AccountScreen(
     authRepository: AuthRepository,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
+    cloudUploadStore: CloudUploadStore,
     hasPhotoPermission: Boolean,
     onRequestPhotoPermission: () -> Unit,
     onScanNowComplete: (foundCount: Int) -> Unit = {},
@@ -56,6 +59,8 @@ fun AccountScreen(
     val scanner = remember { GallerySlipScanner(context) }
 
     val autoScanEnabled by autoScanStore.enabled.collectAsState(initial = true)
+    val cloudUploadEnabled by cloudUploadStore.enabled.collectAsState(initial = false)
+    val cloudinaryConfigured = CloudinaryConfig.isConfigured
     var scanning by remember { mutableStateOf(false) }
     var buckets by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var selectedBucketIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -254,6 +259,45 @@ fun AccountScreen(
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = "Cloud images",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Cloud upload",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    text = if (cloudinaryConfigured) {
+                        "Upload slip images to Cloudinary after save"
+                    } else {
+                        "Cloud upload awaits Cloudinary credentials"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkMuted,
+                )
+            }
+            Switch(
+                checked = cloudUploadEnabled,
+                onCheckedChange = { enabled ->
+                    scope.launch { cloudUploadStore.setEnabled(enabled) }
+                },
+                enabled = cloudinaryConfigured,
+            )
         }
 
         Spacer(modifier = Modifier.height(32.dp))

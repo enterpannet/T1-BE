@@ -360,6 +360,7 @@ private fun MainShell(
                     authRepository = authRepository,
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,
+                    cloudUploadStore = cloudUploadStore,
                     hasPhotoPermission = hasPhotoPermission,
                     onRequestPhotoPermission = {
                         pendingAccountScanNow = true
