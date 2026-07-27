@@ -31,6 +31,14 @@ class AuthRepository(
         tokenStore.clear()
     }
 
+    suspend fun logoutAll() {
+        try {
+            authApi.logoutAll()
+        } catch (_: Exception) {
+        }
+        tokenStore.clear()
+    }
+
     private suspend fun authenticate(fetch: suspend () -> com.getmoney.app.data.api.TokenResponse): Result<Unit> {
         return try {
             val tokens = fetch()

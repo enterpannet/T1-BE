@@ -14,7 +14,12 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
 
 interface AuthApi {
     @POST("auth/register")
@@ -28,6 +33,50 @@ interface AuthApi {
 
     @POST("auth/logout")
     suspend fun logout(@Body body: RefreshRequest)
+
+    @POST("auth/logout-all")
+    suspend fun logoutAll()
+}
+
+interface BudgetApi {
+    @GET("budget/months/{month}")
+    suspend fun getMonth(@Path("month") month: String): BudgetMonthResponse
+
+    @PUT("budget/months/{month}")
+    suspend fun putMonth(
+        @Path("month") month: String,
+        @Body body: PutMonthRequest,
+    ): BudgetMonthResponse
+
+    @POST("budget/months/{month}/fixed-expenses")
+    suspend fun createFixedExpense(
+        @Path("month") month: String,
+        @Body body: CreateExpenseRequest,
+    ): BudgetMonthResponse
+
+    @PATCH("budget/months/{month}/fixed-expenses/{expenseId}")
+    suspend fun patchFixedExpense(
+        @Path("month") month: String,
+        @Path("expenseId") expenseId: String,
+        @Body body: PatchExpenseRequest,
+    ): BudgetMonthResponse
+
+    @DELETE("budget/months/{month}/fixed-expenses/{expenseId}")
+    suspend fun deleteFixedExpense(
+        @Path("month") month: String,
+        @Path("expenseId") expenseId: String,
+    ): BudgetMonthResponse
+}
+
+interface SummaryApi {
+    @GET("summary/today")
+    suspend fun today(): TodaySummaryResponse
+
+    @GET("summary/week")
+    suspend fun week(): WeekSummaryResponse
+
+    @GET("summary/month/{month}")
+    suspend fun month(@Path("month") month: String): MonthSummaryResponse
 }
 
 class ApiClient(tokenStore: TokenStore) {
@@ -54,12 +103,15 @@ class ApiClient(tokenStore: TokenStore) {
         }
         .build()
 
-    val authApi: AuthApi = Retrofit.Builder()
+    private val retrofit: Retrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.API_BASE_URL)
         .client(okHttpClient)
         .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
-        .create(AuthApi::class.java)
+
+    val authApi: AuthApi = retrofit.create(AuthApi::class.java)
+
+    fun <T> createService(service: Class<T>): T = retrofit.create(service)
 }
 
 private class AuthInterceptor(
