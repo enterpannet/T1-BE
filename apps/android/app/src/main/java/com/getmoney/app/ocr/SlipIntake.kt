@@ -14,6 +14,7 @@ class SlipIntake(
         val draft: SlipDraft,
         val source: Source,
         val qrPayload: String? = null,
+        val rawText: String? = null,
     )
 
     enum class Source {
@@ -42,6 +43,6 @@ class SlipIntake(
                 parsed
             }
         }
-        return Outcome(draft = draft, source = Source.Ocr)
+        return Outcome(draft = draft, source = Source.Ocr, rawText = rawText)
     }
 }
