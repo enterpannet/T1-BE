@@ -42,6 +42,7 @@ import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -346,6 +347,7 @@ fun AddSlipScreen(
                                 onFailure = { throwable ->
                                     if (isQueueMode && throwable is DuplicateSlipException) {
                                         error = throwable.message
+                                        delay(1500)
                                         advanceQueueAfterSkip()
                                     } else {
                                         error = when (throwable) {

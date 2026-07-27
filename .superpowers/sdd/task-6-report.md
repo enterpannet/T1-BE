@@ -1,47 +1,45 @@
-# Task 6 Report: Transactions + slip fingerprint
+# Task 6 Report: Home banner + AddSlip queue mode
 
 ## Status
 
-Complete on `feat/getmoney-mvp`.
+Complete. Home shows Thai pending-slip banner when queue non-empty and not dismissed; ดู opens AddSlip queue mode; ภายหลัง dismisses banner and clears in-memory queue. AddSlip skips Pick in queue mode, shows i/N progress, Skip/Confirm/Cancel, advances on save/409/skip, exits when empty.
+
+## Changes
+
+- **HomeScreen.kt**: Added `pendingSlipCount`, `onReviewPendingSlips`, `onDismissPendingBanner`; Carbon banner with primary ดู + TextButton ภายหลัง.
+- **AddSlipScreen.kt**: Added `autoScanCoordinator`, `startInQueueMode`; prefills from `peekCurrent()`, tracks `queueIndex/queueInitialTotal`, Skip advances via `skipCurrent()`, save success via `removeCurrentAfterSave()`, 409 shows message then `skipCurrent()` and next.
+- **AppNav.kt**: Collects `queue` + `bannerDismissed`; wires Home callbacks; route `add_slip?queue={queue}` with bool nav arg.
+
+## Tests
+
+```text
+$env:JAVA_HOME='C:\Program Files\Java\jdk-17'; .\gradlew.bat :app:testDebugUnitTest
+BUILD SUCCESSFUL — all unit tests pass
+```
 
 ## Commit
 
-- `38bec1c feat(api): transactions CRUD with slip dedupe fingerprint`
-
-## TDD evidence
-
-- RED: `cargo test --test transactions_api` failed because
-  `getmoney_api::transactions` did not exist.
-- GREEN: the transaction test target passed all 3 tests after implementation.
-
-## Implemented
-
-- Stable SHA-256 slip fingerprint with trimmed fields and lowercase bank.
-- Authenticated, user-scoped list/create/patch/delete transaction routes.
-- Optional `from`/`to` filtering and decimal-string JSON responses.
-- Database-enforced per-user slip deduplication mapped to
-  `409 {"error":"slip already recorded"}`.
-
-## Verification
-
-- `cargo test --all`: 11 passed, 0 failed.
-- IDE lint diagnostics: no errors.
+```text
+bf2753b feat(android): auto-scan Home banner and confirm queue UX
+```
 
 ## Concerns
 
-- Repository-wide `cargo fmt --check` still reports pre-existing formatting
-  differences in auth files outside Task 6; Task 6 files were formatted directly.
+- ~~409 duplicate message may flash briefly before next slip loads (spec: message then next).~~ Fixed: 1.5s delay before queue advance on 409.
+- Queue mode uses `createSlipTransaction` only (no manual entry in queue flow).
+- Banner reappears on next scan session when new slips found (`bannerDismissed` reset in coordinator `performScan`).
 
-## Review follow-up
+## Fix (Task 6 review — 409 duplicate message)
 
-- PATCH now maps only database unique-constraint violations to
-  `409 {"error":"slip already recorded"}`; all other database errors remain
-  `AppError::Db` responses.
-- PATCH leaves the original `slip_fingerprint` unchanged so transaction edits
-  cannot silently alter the slip identity used for deduplication.
-- Added endpoint-level regressions for a forced PATCH unique violation and for
-  fingerprint preservation after editing slip fields.
-- RED: both regressions failed against `38bec1c` (500 instead of 409; fingerprint
-  changed).
-- GREEN: `cargo test --test transactions_api --manifest-path apps/api/Cargo.toml`
-  passed 5 tests, 0 failed.
+**Problem:** On `DuplicateSlipException` (409) in AddSlip queue mode, `error` was set then `advanceQueueAfterSkip()` cleared it in the same coroutine turn — user never saw the duplicate message.
+
+**Fix:** In `AddSlipScreen.kt` save `onFailure`, after setting `error` for queue-mode 409, `delay(1500)` then call `advanceQueueAfterSkip()`. Error stays visible for ~1.5s before advancing to next slip or `onDone`.
+
+**Tests:** No AddSlipScreen unit test exists; logic fix only.
+
+```text
+$env:JAVA_HOME='C:\Program Files\Java\jdk-17'; cd apps/android; .\gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest
+BUILD SUCCESSFUL in 5s — compile + all unit tests pass
+```
+
+**Commit:** `fix(android): show duplicate-slip message before queue advance`
