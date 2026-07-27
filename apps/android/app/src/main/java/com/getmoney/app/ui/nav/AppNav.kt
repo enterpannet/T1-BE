@@ -9,7 +9,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -45,6 +47,8 @@ fun AppNav(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipOcr: SlipOcr,
+    sharedImageUri: Uri? = null,
+    onShareUriConsumed: () -> Unit = {},
 ) {
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
 
@@ -55,6 +59,8 @@ fun AppNav(
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
             slipOcr = slipOcr,
+            sharedImageUri = sharedImageUri,
+            onShareUriConsumed = onShareUriConsumed,
         )
         false -> AuthNav(authRepository = authRepository)
     }
@@ -100,10 +106,20 @@ private fun MainShell(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipOcr: SlipOcr,
+    sharedImageUri: Uri?,
+    onShareUriConsumed: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    LaunchedEffect(sharedImageUri) {
+        if (sharedImageUri != null) {
+            navController.navigate("add_slip") {
+                launchSingleTop = true
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -137,6 +153,7 @@ private fun MainShell(
             composable("today") {
                 HomeScreen(
                     budgetRepository = budgetRepository,
+                    transactionRepository = transactionRepository,
                     onNavigateBudget = {
                         navController.navigate("budget") {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -153,6 +170,8 @@ private fun MainShell(
                 AddSlipScreen(
                     slipOcr = slipOcr,
                     transactionRepository = transactionRepository,
+                    sharedImageUri = sharedImageUri,
+                    onShareUriConsumed = onShareUriConsumed,
                     onDone = { navController.popBackStack() },
                 )
             }

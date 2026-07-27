@@ -65,6 +65,14 @@ data class CreateTransactionRequest(
     val reference: String? = null,
 )
 
+data class PatchTransactionRequest(
+    val amount: String? = null,
+    @SerializedName("spent_at") val spentAt: String? = null,
+    val source: String? = null,
+    val bank: String? = null,
+    val note: String? = null,
+)
+
 data class TransactionResponse(
     val id: String,
     val amount: String,

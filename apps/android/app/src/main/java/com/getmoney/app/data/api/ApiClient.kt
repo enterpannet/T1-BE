@@ -71,6 +71,15 @@ interface BudgetApi {
 interface TransactionApi {
     @POST("transactions")
     suspend fun create(@Body body: CreateTransactionRequest): TransactionResponse
+
+    @PATCH("transactions/{transactionId}")
+    suspend fun patch(
+        @Path("transactionId") transactionId: String,
+        @Body body: PatchTransactionRequest,
+    ): TransactionResponse
+
+    @DELETE("transactions/{transactionId}")
+    suspend fun delete(@Path("transactionId") transactionId: String)
 }
 
 interface SummaryApi {

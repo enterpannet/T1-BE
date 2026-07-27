@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,8 +56,11 @@ fun AddSlipScreen(
     slipOcr: SlipOcr,
     transactionRepository: TransactionRepository,
     onDone: () -> Unit,
+    sharedImageUri: Uri? = null,
+    onShareUriConsumed: () -> Unit = {},
 ) {
     var step by remember { mutableStateOf(AddSlipStep.Pick) }
+    var isManualEntry by remember { mutableStateOf(false) }
     var amount by remember { mutableStateOf("") }
     var bank by remember { mutableStateOf("") }
     var reference by remember { mutableStateOf("") }
@@ -68,6 +72,7 @@ fun AddSlipScreen(
     val scrollState = rememberScrollState()
 
     fun applyDraft(draft: SlipDraft) {
+        isManualEntry = false
         amount = draft.amount
         bank = draft.bank.orEmpty()
         reference = draft.reference.orEmpty()
@@ -77,6 +82,7 @@ fun AddSlipScreen(
     }
 
     fun enterManually() {
+        isManualEntry = true
         amount = ""
         bank = ""
         reference = ""
@@ -88,16 +94,7 @@ fun AddSlipScreen(
 
     val amountValid = isValidSlipAmount(amount)
 
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
-        if (uri == null) {
-            if (step == AddSlipStep.Processing) {
-                step = AddSlipStep.Pick
-            }
-            return@rememberLauncherForActivityResult
-        }
-
+    fun processImageUri(uri: Uri) {
         step = AddSlipStep.Processing
         error = null
         scope.launch {
@@ -109,6 +106,24 @@ fun AddSlipScreen(
                 step = AddSlipStep.Pick
             }
         }
+    }
+
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri == null) {
+            if (step == AddSlipStep.Processing) {
+                step = AddSlipStep.Pick
+            }
+            return@rememberLauncherForActivityResult
+        }
+        processImageUri(uri)
+    }
+
+    LaunchedEffect(sharedImageUri) {
+        val uri = sharedImageUri ?: return@LaunchedEffect
+        onShareUriConsumed()
+        processImageUri(uri)
     }
 
     Column(
@@ -229,13 +244,23 @@ fun AddSlipScreen(
                         saving = true
                         error = null
                         scope.launch {
-                            transactionRepository.createSlipTransaction(
-                                amount = amount.trim(),
-                                spentAtIso = spentAtIso.trim().ifBlank { null },
-                                bank = bank.trim().ifBlank { null },
-                                reference = reference.trim().ifBlank { null },
-                                note = note.trim().ifBlank { null },
-                            ).fold(
+                            val saveResult = if (isManualEntry) {
+                                transactionRepository.createManualTransaction(
+                                    amount = amount.trim(),
+                                    spentAtIso = spentAtIso.trim().ifBlank { null },
+                                    bank = bank.trim().ifBlank { null },
+                                    note = note.trim().ifBlank { null },
+                                )
+                            } else {
+                                transactionRepository.createSlipTransaction(
+                                    amount = amount.trim(),
+                                    spentAtIso = spentAtIso.trim().ifBlank { null },
+                                    bank = bank.trim().ifBlank { null },
+                                    reference = reference.trim().ifBlank { null },
+                                    note = note.trim().ifBlank { null },
+                                )
+                            }
+                            saveResult.fold(
                                 onSuccess = { onDone() },
                                 onFailure = { throwable ->
                                     error = when (throwable) {
