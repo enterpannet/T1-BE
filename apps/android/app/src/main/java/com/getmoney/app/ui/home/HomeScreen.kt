@@ -42,6 +42,8 @@ import com.getmoney.app.ui.slip.isValidSlipAmount
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
+import com.getmoney.app.ui.util.formatMoney
+import com.getmoney.app.ui.util.formatPercentLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -50,6 +52,9 @@ fun HomeScreen(
     transactionRepository: TransactionRepository,
     onNavigateBudget: () -> Unit,
     onAddSlip: () -> Unit,
+    pendingSlipCount: Int = 0,
+    onReviewPendingSlips: () -> Unit = {},
+    onDismissPendingBanner: () -> Unit = {},
 ) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -139,6 +144,31 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        if (pendingSlipCount > 0) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "พบสลิปใหม่ $pendingSlipCount ใบ",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onReviewPendingSlips,
+                    shape = MaterialTheme.shapes.small,
+                    colors = CarbonButtonDefaults.primaryButtonColors(),
+                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
+                ) {
+                    Text("ดู")
+                }
+                TextButton(onClick = onDismissPendingBanner) {
+                    Text("ภายหลัง")
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(32.dp))
 
         when {
@@ -169,7 +199,7 @@ fun HomeScreen(
                     color = InkMuted,
                 )
                 Text(
-                    text = data.dailyAllowance,
+                    text = formatMoney(data.dailyAllowance),
                     style = MaterialTheme.typography.displayMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
@@ -177,7 +207,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "${formatPercent(percent)} used",
+                    text = "${formatPercentLabel(percent)} used",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (percent > 100.0) ErrorRed else MaterialTheme.colorScheme.onBackground,
                 )
@@ -186,9 +216,9 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                SummaryRow(label = "Spent today", value = data.spent)
+                SummaryRow(label = "Spent today", value = formatMoney(data.spent))
                 Spacer(modifier = Modifier.height(8.dp))
-                SummaryRow(label = "Remaining today", value = data.remainingToday)
+                SummaryRow(label = "Remaining today", value = formatMoney(data.remainingToday))
 
                 if (data.items.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(32.dp))
@@ -241,7 +271,7 @@ private fun TransactionRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = transaction.amount,
+                text = formatMoney(transaction.amount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = InkMuted,
             )
@@ -369,18 +399,9 @@ private fun SummaryRow(label: String, value: String) {
             color = InkMuted,
         )
         Text(
-            text = value,
+            text = formatMoney(value),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
-    }
-}
-
-private fun formatPercent(percent: Double): String {
-    val rounded = (percent * 100).toLong() / 100.0
-    return if (rounded == rounded.toLong().toDouble()) {
-        "${rounded.toLong()}%"
-    } else {
-        "$rounded%"
     }
 }

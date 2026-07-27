@@ -23,7 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.data.tx.DuplicateSlipException
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipDraft
@@ -57,8 +60,22 @@ fun AddSlipScreen(
     onDone: () -> Unit,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
+    autoScanCoordinator: AutoScanCoordinator? = null,
+    startInQueueMode: Boolean = false,
 ) {
-    var step by remember { mutableStateOf(AddSlipStep.Pick) }
+    val isQueueMode = startInQueueMode && autoScanCoordinator != null
+    val queue by autoScanCoordinator?.queue?.collectAsState()
+        ?: remember { mutableStateOf(emptyList()) }
+    var queueInitialTotal by remember { mutableIntStateOf(0) }
+    val queueIndex = if (isQueueMode && queueInitialTotal > 0) {
+        queueInitialTotal - queue.size + 1
+    } else {
+        0
+    }
+
+    var step by remember {
+        mutableStateOf(if (isQueueMode) AddSlipStep.Confirm else AddSlipStep.Pick)
+    }
     var isManualEntry by remember { mutableStateOf(false) }
     var amount by remember { mutableStateOf("") }
     var bank by remember { mutableStateOf("") }
@@ -99,6 +116,30 @@ fun AddSlipScreen(
 
     val amountValid = isValidSlipAmount(amount)
 
+    fun advanceQueueAfterSkip() {
+        val coordinator = autoScanCoordinator ?: return
+        coordinator.skipCurrent()
+        val next = coordinator.peekCurrent()
+        if (next != null) {
+            applyDraft(next.draft, next.source)
+            error = null
+        } else {
+            onDone()
+        }
+    }
+
+    fun advanceQueueAfterSave() {
+        val coordinator = autoScanCoordinator ?: return
+        coordinator.removeCurrentAfterSave()
+        val next = coordinator.peekCurrent()
+        if (next != null) {
+            applyDraft(next.draft, next.source)
+            error = null
+        } else {
+            onDone()
+        }
+    }
+
     fun processImageUri(uri: Uri) {
         step = AddSlipStep.Processing
         error = null
@@ -132,6 +173,18 @@ fun AddSlipScreen(
         processImageUri(uri)
     }
 
+    LaunchedEffect(isQueueMode) {
+        if (!isQueueMode) return@LaunchedEffect
+        val coordinator = autoScanCoordinator ?: return@LaunchedEffect
+        val initial = coordinator.queue.value
+        if (initial.isEmpty()) {
+            onDone()
+            return@LaunchedEffect
+        }
+        queueInitialTotal = initial.size
+        coordinator.peekCurrent()?.let { applyDraft(it.draft, it.source) } ?: onDone()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -144,6 +197,14 @@ fun AddSlipScreen(
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        if (isQueueMode && queueInitialTotal > 0) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "$queueIndex/$queueInitialTotal",
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkMuted,
+            )
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "อ่าน QR บนสลิปก่อน แล้วค่อย OCR เป็น fallback — ทั้งหมดบนเครื่อง " +
@@ -275,11 +336,22 @@ fun AddSlipScreen(
                                 )
                             }
                             saveResult.fold(
-                                onSuccess = { onDone() },
+                                onSuccess = {
+                                    if (isQueueMode) {
+                                        advanceQueueAfterSave()
+                                    } else {
+                                        onDone()
+                                    }
+                                },
                                 onFailure = { throwable ->
-                                    error = when (throwable) {
-                                        is DuplicateSlipException -> throwable.message
-                                        else -> throwable.message ?: "Save failed"
+                                    if (isQueueMode && throwable is DuplicateSlipException) {
+                                        error = throwable.message
+                                        advanceQueueAfterSkip()
+                                    } else {
+                                        error = when (throwable) {
+                                            is DuplicateSlipException -> throwable.message
+                                            else -> throwable.message ?: "Save failed"
+                                        }
                                     }
                                 },
                             )
@@ -295,16 +367,25 @@ fun AddSlipScreen(
                     Text(if (saving) "Saving…" else "Confirm & save")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                TextButton(
-                    onClick = {
-                        step = AddSlipStep.Pick
-                        pickImageLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Pick another image")
+                if (isQueueMode) {
+                    TextButton(
+                        onClick = { advanceQueueAfterSkip() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Skip")
+                    }
+                } else {
+                    TextButton(
+                        onClick = {
+                            step = AddSlipStep.Pick
+                            pickImageLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Pick another image")
+                    }
                 }
             }
         }

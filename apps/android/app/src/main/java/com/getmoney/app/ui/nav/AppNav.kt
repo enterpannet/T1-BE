@@ -24,10 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.data.auth.AuthRepository
@@ -132,9 +134,12 @@ private fun MainShell(
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    val currentRoute = backStackEntry?.destination?.route?.substringBefore("?")
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val queue by autoScanCoordinator.queue.collectAsState()
+    val bannerDismissed by autoScanCoordinator.bannerDismissed.collectAsState()
+    val pendingSlipCount = if (!bannerDismissed) queue.size else 0
     val photoPermission = if (Build.VERSION.SDK_INT >= 33) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
@@ -208,14 +213,33 @@ private fun MainShell(
                         }
                     },
                     onAddSlip = { navController.navigate("add_slip") },
+                    pendingSlipCount = pendingSlipCount,
+                    onReviewPendingSlips = {
+                        navController.navigate("add_slip?queue=true")
+                    },
+                    onDismissPendingBanner = {
+                        autoScanCoordinator.dismissBanner()
+                        autoScanCoordinator.clearQueue()
+                    },
                 )
             }
-            composable("add_slip") {
+            composable(
+                route = "add_slip?queue={queue}",
+                arguments = listOf(
+                    navArgument("queue") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                ),
+            ) { entry ->
+                val startInQueueMode = entry.arguments?.getBoolean("queue") ?: false
                 AddSlipScreen(
                     slipIntake = slipIntake,
                     transactionRepository = transactionRepository,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = onShareUriConsumed,
+                    autoScanCoordinator = autoScanCoordinator,
+                    startInQueueMode = startInQueueMode,
                     onDone = { navController.popBackStack() },
                 )
             }
