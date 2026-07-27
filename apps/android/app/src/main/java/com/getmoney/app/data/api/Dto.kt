@@ -56,6 +56,15 @@ data class BudgetMonthResponse(
     @SerializedName("days_in_month") val daysInMonth: Int,
 )
 
+data class CreateTransactionRequest(
+    val amount: String,
+    @SerializedName("spent_at") val spentAt: String,
+    val source: String,
+    val bank: String? = null,
+    val note: String? = null,
+    val reference: String? = null,
+)
+
 data class TransactionResponse(
     val id: String,
     val amount: String,

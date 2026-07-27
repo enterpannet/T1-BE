@@ -68,6 +68,11 @@ interface BudgetApi {
     ): BudgetMonthResponse
 }
 
+interface TransactionApi {
+    @POST("transactions")
+    suspend fun create(@Body body: CreateTransactionRequest): TransactionResponse
+}
+
 interface SummaryApi {
     @GET("summary/today")
     suspend fun today(): TodaySummaryResponse

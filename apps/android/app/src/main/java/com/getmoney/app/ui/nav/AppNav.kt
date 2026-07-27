@@ -20,11 +20,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
+import com.getmoney.app.data.tx.TransactionRepository
+import com.getmoney.app.ocr.SlipOcr
 import com.getmoney.app.ui.account.AccountScreen
 import com.getmoney.app.ui.auth.LoginScreen
 import com.getmoney.app.ui.auth.RegisterScreen
 import com.getmoney.app.ui.budget.BudgetScreen
 import com.getmoney.app.ui.home.HomeScreen
+import com.getmoney.app.ui.slip.AddSlipScreen
 import com.getmoney.app.ui.summary.SummaryScreen
 
 private data class MainTab(val route: String, val label: String)
@@ -40,6 +43,8 @@ private val mainTabs = listOf(
 fun AppNav(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
+    transactionRepository: TransactionRepository,
+    slipOcr: SlipOcr,
 ) {
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
 
@@ -48,6 +53,8 @@ fun AppNav(
         true -> MainShell(
             authRepository = authRepository,
             budgetRepository = budgetRepository,
+            transactionRepository = transactionRepository,
+            slipOcr = slipOcr,
         )
         false -> AuthNav(authRepository = authRepository)
     }
@@ -91,6 +98,8 @@ private fun AuthNav(authRepository: AuthRepository) {
 private fun MainShell(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
+    transactionRepository: TransactionRepository,
+    slipOcr: SlipOcr,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -98,22 +107,24 @@ private fun MainShell(
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                mainTabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentRoute == tab.route,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            if (currentRoute != "add_slip") {
+                NavigationBar {
+                    mainTabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentRoute == tab.route,
+                            onClick = {
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        label = { Text(tab.label) },
-                        icon = { Text(tab.label.take(1)) },
-                    )
+                            },
+                            label = { Text(tab.label) },
+                            icon = { Text(tab.label.take(1)) },
+                        )
+                    }
                 }
             }
         },
@@ -135,6 +146,14 @@ private fun MainShell(
                             restoreState = true
                         }
                     },
+                    onAddSlip = { navController.navigate("add_slip") },
+                )
+            }
+            composable("add_slip") {
+                AddSlipScreen(
+                    slipOcr = slipOcr,
+                    transactionRepository = transactionRepository,
+                    onDone = { navController.popBackStack() },
                 )
             }
             composable("summary") {

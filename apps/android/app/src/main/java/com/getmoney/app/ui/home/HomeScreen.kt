@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,6 +28,7 @@ import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.budget.BudgetRequiredException
 import com.getmoney.app.ui.components.CarbonPercentBar
 import com.getmoney.app.ui.components.parsePercent
+import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
 
@@ -34,6 +36,7 @@ import com.getmoney.app.ui.theme.InkMuted
 fun HomeScreen(
     budgetRepository: BudgetRepository,
     onNavigateBudget: () -> Unit,
+    onAddSlip: () -> Unit,
 ) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -138,6 +141,17 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(
+                    onClick = onAddSlip,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.small,
+                    colors = CarbonButtonDefaults.primaryButtonColors(),
+                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
+                ) {
+                    Text("Add slip")
                 }
             }
         }
