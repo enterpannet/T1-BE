@@ -47,6 +47,7 @@ fn entity_models_match_the_database_contract() {
         bank: None,
         note: None,
         slip_fingerprint: None,
+        image_url: None,
         created_at: now,
     };
 }

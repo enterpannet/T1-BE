@@ -283,3 +283,52 @@ async fn transaction_crud_is_user_scoped_and_uses_decimal_strings() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(listed, json!([]));
 }
+
+#[tokio::test]
+async fn image_url_round_trips_on_create_patch_and_list() {
+    let app = test_app().await;
+    let access_token = register(&app).await;
+    let image_url = "https://res.cloudinary.com/demo/image/upload/v1/x.jpg";
+
+    let (status, created) = request(
+        &app,
+        "POST",
+        "/transactions",
+        json!({
+            "amount": "42.00",
+            "spent_at": "2026-07-28T12:00:00+07:00",
+            "source": "manual",
+            "image_url": image_url
+        }),
+        Some(&access_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(created["image_url"], image_url);
+    let id = created["id"].as_str().unwrap();
+
+    let (status, listed) = request(
+        &app,
+        "GET",
+        "/transactions",
+        Value::Null,
+        Some(&access_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let items = listed.as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["image_url"], image_url);
+
+    let updated_url = "https://res.cloudinary.com/demo/image/upload/v1/y.jpg";
+    let (status, patched) = request(
+        &app,
+        "PATCH",
+        &format!("/transactions/{id}"),
+        json!({"image_url": updated_url}),
+        Some(&access_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(patched["image_url"], updated_url);
+}

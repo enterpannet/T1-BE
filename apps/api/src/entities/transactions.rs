@@ -13,6 +13,7 @@ pub struct Model {
     pub bank: Option<String>,
     pub note: Option<String>,
     pub slip_fingerprint: Option<String>,
+    pub image_url: Option<String>,
     pub created_at: DateTimeWithTimeZone,
 }
 

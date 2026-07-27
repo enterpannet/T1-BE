@@ -35,6 +35,7 @@ pub struct CreateTransactionRequest {
     bank: Option<String>,
     note: Option<String>,
     reference: Option<String>,
+    image_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -44,6 +45,7 @@ pub struct PatchTransactionRequest {
     source: Option<String>,
     bank: Option<String>,
     note: Option<String>,
+    image_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -55,6 +57,7 @@ pub struct TransactionResponse {
     source: String,
     bank: Option<String>,
     note: Option<String>,
+    image_url: Option<String>,
     created_at: DateTime<FixedOffset>,
 }
 
@@ -67,6 +70,7 @@ impl From<transactions::Model> for TransactionResponse {
             source: transaction.source,
             bank: transaction.bank,
             note: transaction.note,
+            image_url: transaction.image_url,
             created_at: transaction.created_at,
         }
     }
@@ -143,6 +147,7 @@ pub async fn create_transaction(
     let amount = parse_money(&request.amount)?;
     let bank = clean_optional(request.bank);
     let note = clean_optional(request.note);
+    let image_url = clean_optional(request.image_url);
     let fingerprint = (request.source == "slip").then(|| {
         slip_fingerprint(
             &request.amount,
@@ -161,6 +166,7 @@ pub async fn create_transaction(
         bank: Set(bank),
         note: Set(note),
         slip_fingerprint: Set(fingerprint.clone()),
+        image_url: Set(image_url),
         created_at: Set(Utc::now().fixed_offset()),
     };
 
@@ -208,6 +214,9 @@ pub async fn patch_transaction(
     }
     if let Some(note) = request.note {
         active.note = Set(clean_optional(Some(note)));
+    }
+    if let Some(image_url) = request.image_url {
+        active.image_url = Set(clean_optional(Some(image_url)));
     }
 
     let transaction = active
