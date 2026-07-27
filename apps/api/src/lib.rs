@@ -5,6 +5,7 @@ pub mod db;
 pub mod entities;
 pub mod error;
 pub mod state;
+pub mod summary;
 pub mod transactions;
 
 use axum::{
@@ -48,5 +49,8 @@ pub fn app(state: AppState) -> Router {
             axum::routing::patch(transactions::handlers::patch_transaction)
                 .delete(transactions::handlers::delete_transaction),
         )
+        .route("/summary/today", get(summary::handlers::today))
+        .route("/summary/week", get(summary::handlers::week))
+        .route("/summary/month/{month}", get(summary::handlers::month))
         .with_state(state)
 }
