@@ -134,9 +134,12 @@ fun AccountScreen(
                         return@launch
                     }
                     scanning = true
-                    autoScanCoordinator.runScanNow(true)
-                    scanning = false
-                    onScanNowComplete(autoScanCoordinator.queue.value.size)
+                    try {
+                        autoScanCoordinator.runScanNow(true)
+                        onScanNowComplete(autoScanCoordinator.queue.value.size)
+                    } finally {
+                        scanning = false
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth(),

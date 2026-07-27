@@ -1,42 +1,92 @@
-# Task 8 Report: Android project + Carbon theme
+# Task 8 Report: Version bump, full tests, APK
 
-## Status
+**Branch:** `feat/auto-gallery-slip-scan`  
+**Date:** 2026-07-28
 
-Complete on `feat/getmoney-mvp`. Compose Android app scaffold with IBM Carbon
-tokens and `GetMoneyTheme` is committed; debug APK builds successfully.
+## Status: Complete
+
+## Version bump
+
+- `apps/android/app/build.gradle.kts`: `versionCode = 6`, `versionName = "1.5"`
+
+## Unit tests
+
+Command: `.\gradlew.bat :app:testDebugUnitTest` (JAVA_HOME=jdk-17)
+
+| Suite | Tests | Failures |
+|---|---:|---:|
+| AutoScanCoordinatorTest | 6 | 0 |
+| AutoScanCursorLogicTest | 2 | 0 |
+| SlipCandidateFilterTest | 4 | 0 |
+| EmvQrParserTest | 4 | 0 |
+| SlipParserTest | 6 | 0 |
+| SlipAmountValidationTest | 2 | 0 |
+| **Total** | **24** | **0** |
+
+Result: **BUILD SUCCESSFUL**
+
+## APK
+
+Command: `.\gradlew.bat :app:assembleDebug` → **BUILD SUCCESSFUL**
+
+Copied to: `d:\10min\getmoney\getmoney-v1.5-tmd.deals.apk` (~73.5 MB)
+
+APK **not** committed (per brief).
 
 ## Commit
 
-- `5d754dd feat(android): Compose app scaffold with Carbon theme`
+```
+chore(android): bump to 1.5 for auto gallery slip scan
+```
 
-## Implementation
+File: `apps/android/app/build.gradle.kts` only.
 
-- Gradle project at `apps/android/` (minSdk 26, targetSdk 35, Compose BOM
-  2024.12.01, AGP 8.7.3, Kotlin 2.0.21).
-- Carbon color tokens in `Color.kt` per brief (`IbmBlue`, `Ink`, `Canvas`, etc.).
-- `GetMoneyTheme` in `CarbonTheme.kt`: Material3 light scheme, 0dp
-  `RoundedCornerShape` everywhere, primary button helpers with 0 elevation.
-- IBM Plex Sans via Google Fonts downloadable provider (`Type.kt`, weight 300
-  on `displayLarge` for the “GetMoney” title).
-- `MainActivity`: white canvas, centered “GetMoney” in Plex Light.
+## Manual checklist (device) — deferred
 
-## Build verification
+No physical device available in this agent session. Verify on device before release:
 
-- `./gradlew.bat :app:assembleDebug` **BUILD SUCCESSFUL** (35 tasks) using
-  `JAVA_HOME=C:\Program Files\Java\jdk-17` (default system JDK 25 is unsupported
-  by Gradle 8.11.1).
-- APK: `apps/android/app/build/outputs/apk/debug/app-debug.apk`
-- Emulator/manual UI check not run in this session.
+1. Fresh install / clear app data → open → grant photos → no huge backlog.
+2. Save a new slip screenshot → kill/reopen app → banner “พบสลิปใหม่”.
+3. Confirm → Home % updates; Skip → does not return next open.
+4. Deny permission → no crash; Pick slip still works.
+5. Toggle auto-scan off → no scan on open.
 
 ## Concerns
 
-- IBM Plex Sans loads at runtime via Google Play Services downloadable fonts;
-  devices without GMS may fall back until bundled fonts are added.
-- Build requires JDK 17 (or 21); JDK 25 on PATH fails with `IllegalArgumentException: 25.0.1`.
-- `local.properties` is gitignored; developers need `sdk.dir` set locally.
+None from automated steps. Manual device checklist remains outstanding.
 
-## Review fix (Critical)
+---
 
-- Updated `apps/android/.gitignore`: `**/build/` and `.gradle/` (replacing root-only `/build`).
-- Removed ~513 tracked files under `apps/android/app/build/` from the index via `git rm -r --cached`.
-- Commit: `chore(android): ignore and untrack app build artifacts`.
+## Review fixes (2026-07-28)
+
+**Status:** Complete
+
+### Changes
+
+1. **AddSlipScreen** — Skip button `enabled = !saving` in queue mode; blocks double-advance during 409 duplicate delay.
+2. **AutoScanCoordinator** — `scanGeneration` (`AtomicInteger`) incremented on `clearQueue()`; in-flight `performScan` discards stale results before queue/banner writes.
+3. **AccountScreen** — `runScanNow` wrapped in `try/finally` so `scanning = false` always.
+
+### Tests
+
+Command: `.\gradlew.bat :app:testDebugUnitTest :app:compileDebugKotlin` (JAVA_HOME=jdk-17)
+
+| Suite | Tests | Failures |
+|---|---:|---:|
+| AutoScanCoordinatorTest | 7 | 0 |
+| (all others unchanged) | 17 | 0 |
+| **Total** | **25** | **0** |
+
+Result: **BUILD SUCCESSFUL**
+
+New test: `clearQueueDuringScanPreventsStaleQueueRefill`
+
+### Commit
+
+```
+fix(android): guard queue advance during 409 and logout scan race
+```
+
+### Concerns
+
+None. Cursor may still advance on stale scan completion (intentional scope limit).

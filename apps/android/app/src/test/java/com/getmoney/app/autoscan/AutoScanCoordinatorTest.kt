@@ -3,6 +3,7 @@ package com.getmoney.app.autoscan
 import android.net.Uri
 import com.getmoney.app.ocr.SlipDraft
 import com.getmoney.app.ocr.SlipIntake
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -153,6 +154,33 @@ class AutoScanCoordinatorTest {
     }
 
     @Test
+    fun clearQueueDuringScanPreventsStaleQueueRefill() = runBlocking {
+        val store = FakeAutoScanStore(enabled = true, cursor = 1_000L)
+        val scanner = FakeGallerySlipScanner(images = listOf(scannedImage(uri1)))
+        val intake = SlowFakeSlipIntake(
+            outcomes = mapOf(
+                uri1 to FakeOutcome.Success(candidateOutcome("100.00", SlipIntake.Source.Qr)),
+            ),
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        val scanJob = async {
+            coordinator.runScanNow(hasPhotoPermission = true)
+        }
+        intake.awaitProcessingStarted()
+        coordinator.clearQueue()
+        intake.releaseProcessing()
+        scanJob.await()
+
+        assertTrue(coordinator.queue.value.isEmpty())
+    }
+
+    @Test
     fun queueOperationsWork() = runBlocking {
         val store = FakeAutoScanStore(enabled = true, cursor = 1_000L)
         val scanner = FakeGallerySlipScanner(
@@ -255,6 +283,31 @@ class AutoScanCoordinatorTest {
         private val outcomes: Map<Uri, FakeOutcome> = emptyMap(),
     ) : SlipIntakeReader {
         override suspend fun process(uri: Uri): SlipIntake.Outcome {
+            return when (val result = outcomes[uri]) {
+                is FakeOutcome.Success -> result.outcome
+                FakeOutcome.Failure -> throw IllegalStateException("intake failed")
+                null -> throw IllegalStateException("unexpected uri $uri")
+            }
+        }
+    }
+
+    private class SlowFakeSlipIntake(
+        private val outcomes: Map<Uri, FakeOutcome> = emptyMap(),
+    ) : SlipIntakeReader {
+        private val processingStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        private val releaseProcessing = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+        suspend fun awaitProcessingStarted() {
+            processingStarted.await()
+        }
+
+        fun releaseProcessing() {
+            releaseProcessing.complete(Unit)
+        }
+
+        override suspend fun process(uri: Uri): SlipIntake.Outcome {
+            processingStarted.complete(Unit)
+            releaseProcessing.await()
             return when (val result = outcomes[uri]) {
                 is FakeOutcome.Success -> result.outcome
                 FakeOutcome.Failure -> throw IllegalStateException("intake failed")

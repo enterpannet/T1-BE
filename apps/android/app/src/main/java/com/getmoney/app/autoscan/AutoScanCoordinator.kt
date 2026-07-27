@@ -5,6 +5,7 @@ import com.getmoney.app.ocr.SlipIntake
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicInteger
 
 interface AutoScanStoreReader {
     suspend fun isEnabled(): Boolean
@@ -42,6 +43,8 @@ class AutoScanCoordinator(
 
     private var scannedThisSession = false
 
+    private val scanGeneration = AtomicInteger(0)
+
     suspend fun runScanIfNeeded(hasPhotoPermission: Boolean) {
         if (!store.isEnabled() || !hasPhotoPermission) return
 
@@ -74,6 +77,7 @@ class AutoScanCoordinator(
     }
 
     fun clearQueue() {
+        scanGeneration.incrementAndGet()
         _queue.value = emptyList()
     }
 
@@ -92,6 +96,7 @@ class AutoScanCoordinator(
     }
 
     private suspend fun performScan(now: Long) {
+        val generation = scanGeneration.get()
         val scanStartedAt = now
         val cursor = store.getLastScanCursorEpochSec() ?: return
         val images = scanner.listNewImages(
@@ -105,6 +110,7 @@ class AutoScanCoordinator(
             if (!SlipCandidateFilter.isCandidate(outcome)) continue
             found += QueuedSlip(image.uri, outcome.draft, outcome.source)
         }
+        if (scanGeneration.get() != generation) return
         _queue.value = found
         _bannerDismissed.value = false
         store.setLastScanCursorEpochSec(AutoScanCursor.advanceToScanStart(scanStartedAt))

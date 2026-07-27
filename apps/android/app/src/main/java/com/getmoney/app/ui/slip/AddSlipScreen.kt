@@ -372,6 +372,7 @@ fun AddSlipScreen(
                 if (isQueueMode) {
                     TextButton(
                         onClick = { advanceQueueAfterSkip() },
+                        enabled = !saving,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Skip")
