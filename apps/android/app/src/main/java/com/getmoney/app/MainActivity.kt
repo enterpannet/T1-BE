@@ -20,6 +20,7 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.GallerySlipScanner
 import com.getmoney.app.autoscan.SlipIntakeReader
+import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ocr.SlipOcr
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
         val transactionRepository = TransactionRepository(
             transactionApi = apiClient.createService(TransactionApi::class.java),
         )
+        val slipImageStore = SlipImageStore(applicationContext)
         val slipIntake = SlipIntake(
             qrScanner = SlipQrScanner(applicationContext),
             ocr = SlipOcr(applicationContext),
@@ -63,6 +65,7 @@ class MainActivity : ComponentActivity() {
                     authRepository = authRepository,
                     budgetRepository = budgetRepository,
                     transactionRepository = transactionRepository,
+                    slipImageStore = slipImageStore,
                     slipIntake = slipIntake,
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,

@@ -42,6 +42,7 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
+import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ui.account.AccountScreen
@@ -51,6 +52,7 @@ import com.getmoney.app.ui.budget.BudgetScreen
 import com.getmoney.app.ui.home.HomeScreen
 import com.getmoney.app.ui.slip.AddSlipScreen
 import com.getmoney.app.ui.summary.SummaryScreen
+import com.getmoney.app.ui.tx.TransactionsScreen
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import kotlinx.coroutines.launch
 
@@ -58,6 +60,7 @@ private data class MainTab(val route: String, val label: String)
 
 private val mainTabs = listOf(
     MainTab("today", "Today"),
+    MainTab("tx", "Tx"),
     MainTab("summary", "Summary"),
     MainTab("budget", "Budget"),
     MainTab("account", "Account"),
@@ -68,6 +71,7 @@ fun AppNav(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
+    slipImageStore: SlipImageStore,
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
@@ -88,6 +92,7 @@ fun AppNav(
             authRepository = authRepository,
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
+            slipImageStore = slipImageStore,
             slipIntake = slipIntake,
             autoScanStore = autoScanStore,
             autoScanCoordinator = autoScanCoordinator,
@@ -137,6 +142,7 @@ private fun MainShell(
     authRepository: AuthRepository,
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
+    slipImageStore: SlipImageStore,
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
@@ -289,6 +295,12 @@ private fun MainShell(
                     pendingSlipCount = pendingSlipCount,
                     onReviewPendingSlips = { openSlipQueue() },
                     onDismissPendingBanner = { dismissPendingSlips() },
+                )
+            }
+            composable("tx") {
+                TransactionsScreen(
+                    transactionRepository = transactionRepository,
+                    slipImageStore = slipImageStore,
                 )
             }
             composable(
