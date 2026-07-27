@@ -4,13 +4,17 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -32,8 +36,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.data.cloudinary.CloudUploadStore
 import com.getmoney.app.data.cloudinary.CloudinaryConfig
@@ -93,10 +103,12 @@ fun AddSlipScreen(
     var spentAtIso by remember { mutableStateOf(defaultSpentAtIso()) }
     var readSourceHint by remember { mutableStateOf<String?>(null) }
     var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
+    var showFullImage by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
 
     fun applyDraft(draft: SlipDraft, source: SlipIntake.Source, imageUri: Uri? = null) {
         isManualEntry = false
@@ -288,6 +300,33 @@ fun AddSlipScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
+                pendingImageUri?.let { previewUri ->
+                    Text(
+                        text = "ตัวอย่างสลิป",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(previewUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Slip preview",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(120.dp)
+                            .background(InkMuted.copy(alpha = 0.12f))
+                            .clickable { showFullImage = true },
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "แตะรูปเพื่อดูขนาดเต็ม",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkMuted,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it },
@@ -437,6 +476,47 @@ fun AddSlipScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Cancel")
+        }
+    }
+
+    if (showFullImage) {
+        val fullUri = pendingImageUri
+        if (fullUri != null) {
+            Dialog(
+                onDismissRequest = { showFullImage = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.92f))
+                        .clickable { showFullImage = false },
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(fullUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Slip full size",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .align(Alignment.Center)
+                            .clickable(enabled = false) {},
+                    )
+                    TextButton(
+                        onClick = { showFullImage = false },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    ) {
+                        Text("ปิด", color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+            }
+        } else {
+            showFullImage = false
         }
     }
 }

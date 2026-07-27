@@ -37,8 +37,8 @@ android {
         applicationId = "com.getmoney.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.10"
+        versionCode = 12
+        versionName = "1.11"
         buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
         val cloudinaryCloudName = envOrProp("CLOUDINARY_CLOUD_NAME")
         val cloudinaryUploadPreset = envOrProp("CLOUDINARY_UPLOAD_PRESET", "UPLOAD_PRESET")
