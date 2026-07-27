@@ -16,12 +16,12 @@ private val Context.autoScanDataStore: DataStore<Preferences> by preferencesData
     name = "auto_scan",
 )
 
-class AutoScanStore(context: Context) {
+class AutoScanStore(context: Context) : AutoScanStoreReader {
     private val dataStore = context.autoScanDataStore
 
     val enabled: Flow<Boolean> = dataStore.data.map { it[ENABLED] ?: true }
 
-    suspend fun isEnabled(): Boolean = dataStore.data.first()[ENABLED] ?: true
+    override suspend fun isEnabled(): Boolean = dataStore.data.first()[ENABLED] ?: true
 
     suspend fun setEnabled(value: Boolean) {
         dataStore.edit { prefs ->
@@ -29,16 +29,16 @@ class AutoScanStore(context: Context) {
         }
     }
 
-    suspend fun getLastScanCursorEpochSec(): Long? =
+    override suspend fun getLastScanCursorEpochSec(): Long? =
         dataStore.data.first()[LAST_SCAN_CURSOR_EPOCH_SEC]
 
-    suspend fun setLastScanCursorEpochSec(value: Long) {
+    override suspend fun setLastScanCursorEpochSec(value: Long) {
         dataStore.edit { prefs ->
             prefs[LAST_SCAN_CURSOR_EPOCH_SEC] = value
         }
     }
 
-    suspend fun getExtraBucketIds(): Set<String> =
+    override suspend fun getExtraBucketIds(): Set<String> =
         dataStore.data.first()[EXTRA_BUCKET_IDS]
             ?.split(',')
             ?.map { it.trim() }

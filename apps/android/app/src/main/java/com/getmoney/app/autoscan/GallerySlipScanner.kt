@@ -6,13 +6,13 @@ import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class GallerySlipScanner(context: Context) {
+class GallerySlipScanner(context: Context) : GallerySlipScannerReader {
     private val contentResolver = context.contentResolver
 
-    suspend fun listNewImages(
+    override suspend fun listNewImages(
         afterEpochSec: Long,
-        extraBucketIds: Set<String> = emptySet(),
-        limit: Int = 30,
+        extraBucketIds: Set<String>,
+        limit: Int,
     ): List<ScannedImage> = withContext(Dispatchers.IO) {
         // Wide-first: extraBucketIds are persisted for Settings; query stays wide.
 
