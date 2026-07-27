@@ -16,6 +16,10 @@ import com.getmoney.app.data.api.TransactionApi
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.auth.TokenStore
 import com.getmoney.app.data.budget.BudgetRepository
+import com.getmoney.app.autoscan.AutoScanCoordinator
+import com.getmoney.app.autoscan.AutoScanStore
+import com.getmoney.app.autoscan.GallerySlipScanner
+import com.getmoney.app.autoscan.SlipIntakeReader
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
 import com.getmoney.app.ocr.SlipOcr
@@ -45,6 +49,13 @@ class MainActivity : ComponentActivity() {
             qrScanner = SlipQrScanner(applicationContext),
             ocr = SlipOcr(applicationContext),
         )
+        val autoScanStore = AutoScanStore(applicationContext)
+        val gallerySlipScanner = GallerySlipScanner(applicationContext)
+        val autoScanCoordinator = AutoScanCoordinator(
+            store = autoScanStore,
+            scanner = gallerySlipScanner,
+            intake = SlipIntakeReader { uri -> slipIntake.process(uri) },
+        )
 
         setContent {
             GetMoneyTheme {
@@ -53,6 +64,8 @@ class MainActivity : ComponentActivity() {
                     budgetRepository = budgetRepository,
                     transactionRepository = transactionRepository,
                     slipIntake = slipIntake,
+                    autoScanStore = autoScanStore,
+                    autoScanCoordinator = autoScanCoordinator,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = { sharedImageUri = null },
                 )

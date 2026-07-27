@@ -1,5 +1,11 @@
 package com.getmoney.app.ui.nav
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -9,21 +15,26 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.getmoney.app.autoscan.AutoScanCoordinator
+import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
+import kotlinx.coroutines.launch
 import com.getmoney.app.ui.account.AccountScreen
 import com.getmoney.app.ui.auth.LoginScreen
 import com.getmoney.app.ui.auth.RegisterScreen
@@ -47,10 +58,18 @@ fun AppNav(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipIntake: SlipIntake,
+    autoScanStore: AutoScanStore,
+    autoScanCoordinator: AutoScanCoordinator,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
 ) {
     val isLoggedIn by authRepository.isLoggedIn.collectAsState(initial = null)
+
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn == false) {
+            autoScanCoordinator.clearQueue()
+        }
+    }
 
     when (isLoggedIn) {
         null -> LoadingScreen()
@@ -59,6 +78,7 @@ fun AppNav(
             budgetRepository = budgetRepository,
             transactionRepository = transactionRepository,
             slipIntake = slipIntake,
+            autoScanCoordinator = autoScanCoordinator,
             sharedImageUri = sharedImageUri,
             onShareUriConsumed = onShareUriConsumed,
         )
@@ -106,12 +126,36 @@ private fun MainShell(
     budgetRepository: BudgetRepository,
     transactionRepository: TransactionRepository,
     slipIntake: SlipIntake,
+    autoScanCoordinator: AutoScanCoordinator,
     sharedImageUri: Uri?,
     onShareUriConsumed: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val photoPermission = if (Build.VERSION.SDK_INT >= 33) {
+        Manifest.permission.READ_MEDIA_IMAGES
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        scope.launch { autoScanCoordinator.runScanIfNeeded(granted) }
+    }
+
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, photoPermission) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            autoScanCoordinator.runScanIfNeeded(true)
+        } else {
+            permissionLauncher.launch(photoPermission)
+        }
+    }
 
     LaunchedEffect(sharedImageUri) {
         if (sharedImageUri != null) {
