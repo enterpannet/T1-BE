@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -17,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,7 +44,6 @@ import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
-import kotlinx.coroutines.launch
 import com.getmoney.app.ui.account.AccountScreen
 import com.getmoney.app.ui.auth.LoginScreen
 import com.getmoney.app.ui.auth.RegisterScreen
@@ -49,6 +51,8 @@ import com.getmoney.app.ui.budget.BudgetScreen
 import com.getmoney.app.ui.home.HomeScreen
 import com.getmoney.app.ui.slip.AddSlipScreen
 import com.getmoney.app.ui.summary.SummaryScreen
+import com.getmoney.app.ui.theme.CarbonButtonDefaults
+import kotlinx.coroutines.launch
 
 private data class MainTab(val route: String, val label: String)
 
@@ -157,20 +161,24 @@ private fun MainShell(
     val hasPhotoPermission = ContextCompat.checkSelfPermission(context, photoPermission) ==
         PackageManager.PERMISSION_GRANTED
 
+    fun openSlipQueue() {
+        navController.navigate("add_slip?queue=true") {
+            launchSingleTop = true
+        }
+    }
+
+    fun dismissPendingSlips() {
+        autoScanCoordinator.dismissBanner()
+        autoScanCoordinator.clearQueue()
+    }
+
     fun handleScanNowComplete(foundCount: Int) {
-        if (foundCount > 0) {
-            navController.navigate("today") {
-                popUpTo(navController.graph.findStartDestination().id) {
-                    saveState = true
-                }
-                launchSingleTop = true
-                restoreState = true
-            }
-        } else {
+        if (foundCount == 0) {
             scope.launch {
                 snackbarHostState.showSnackbar("No new slips found")
             }
         }
+        // foundCount > 0 → dialog below appears from queue StateFlow
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -203,6 +211,35 @@ private fun MainShell(
                 launchSingleTop = true
             }
         }
+    }
+
+    val showSlipPopup = pendingSlipCount > 0 && currentRoute != "add_slip"
+
+    if (showSlipPopup) {
+        AlertDialog(
+            onDismissRequest = { /* require explicit choice */ },
+            title = {
+                Text("พบสลิปใหม่ $pendingSlipCount ใบ")
+            },
+            text = {
+                Text("ต้องการตรวจและบันทึกตอนนี้หรือไม่?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { openSlipQueue() },
+                    shape = MaterialTheme.shapes.small,
+                    colors = CarbonButtonDefaults.primaryButtonColors(),
+                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
+                ) {
+                    Text("ดูเลย")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { dismissPendingSlips() }) {
+                    Text("ภายหลัง")
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -250,13 +287,8 @@ private fun MainShell(
                     },
                     onAddSlip = { navController.navigate("add_slip") },
                     pendingSlipCount = pendingSlipCount,
-                    onReviewPendingSlips = {
-                        navController.navigate("add_slip?queue=true")
-                    },
-                    onDismissPendingBanner = {
-                        autoScanCoordinator.dismissBanner()
-                        autoScanCoordinator.clearQueue()
-                    },
+                    onReviewPendingSlips = { openSlipQueue() },
+                    onDismissPendingBanner = { dismissPendingSlips() },
                 )
             }
             composable(
