@@ -7,7 +7,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, ModelTrait,
-    QueryFilter, QueryOrder,
+    QueryFilter, QueryOrder, SqlErr,
 };
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -44,7 +44,6 @@ pub struct PatchTransactionRequest {
     source: Option<String>,
     bank: Option<String>,
     note: Option<String>,
-    reference: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -192,12 +191,7 @@ pub async fn patch_transaction(
     Json(request): Json<PatchTransactionRequest>,
 ) -> AppResult<Json<TransactionResponse>> {
     let transaction = owned_transaction(&state, user_id, transaction_id).await?;
-    let fingerprint_fields_changed = request.amount.is_some()
-        || request.spent_at.is_some()
-        || request.source.is_some()
-        || request.bank.is_some()
-        || request.reference.is_some();
-    let mut active = transaction.clone().into_active_model();
+    let mut active = transaction.into_active_model();
 
     if let Some(amount) = request.amount.as_deref() {
         active.amount = Set(parse_money(amount)?);
@@ -216,32 +210,15 @@ pub async fn patch_transaction(
         active.note = Set(clean_optional(Some(note)));
     }
 
-    if fingerprint_fields_changed {
-        let source = active.source.as_ref();
-        if source == "slip" {
-            let amount = active.amount.as_ref().to_string();
-            let spent_at = active.spent_at.as_ref().to_rfc3339();
-            let bank = active.bank.as_ref().as_deref().unwrap_or_default();
-            active.slip_fingerprint = Set(Some(slip_fingerprint(
-                &amount,
-                &spent_at,
-                bank,
-                request.reference.as_deref().unwrap_or_default(),
-            )));
-        } else {
-            active.slip_fingerprint = Set(None);
-        }
-    }
-
-    let transaction = match active.update(&state.db).await {
-        Ok(transaction) => transaction,
-        Err(error) => {
-            if fingerprint_fields_changed {
-                return Err(AppError::Conflict("slip already recorded".into()));
+    let transaction = active
+        .update(&state.db)
+        .await
+        .map_err(|error| match error.sql_err() {
+            Some(SqlErr::UniqueConstraintViolation(_)) => {
+                AppError::Conflict("slip already recorded".into())
             }
-            return Err(error.into());
-        }
-    };
+            _ => AppError::Db(error),
+        })?;
     Ok(Json(transaction.into()))
 }
 
