@@ -15,6 +15,16 @@ android {
         versionCode = 8
         versionName = "1.7"
         buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
+        buildConfigField(
+            "String",
+            "CLOUDINARY_CLOUD_NAME",
+            "\"${project.findProperty("CLOUDINARY_CLOUD_NAME") ?: ""}\"",
+        )
+        buildConfigField(
+            "String",
+            "CLOUDINARY_UPLOAD_PRESET",
+            "\"${project.findProperty("CLOUDINARY_UPLOAD_PRESET") ?: ""}\"",
+        )
     }
 
     buildTypes {
