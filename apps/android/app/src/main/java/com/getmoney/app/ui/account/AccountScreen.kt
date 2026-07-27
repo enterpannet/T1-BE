@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.getmoney.app.autoscan.AutoScanCoordinator
+import com.getmoney.app.autoscan.AutoScanCursor
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.GallerySlipScanner
 import com.getmoney.app.data.auth.AuthRepository
@@ -110,7 +111,7 @@ fun AccountScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "Scan new gallery images when you open the app.",
+                    text = "Scan gallery history in batches when you open the app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = InkMuted,
                 )
@@ -158,6 +159,39 @@ fun AccountScreen(
                 Text("Scan now")
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    if (scanning) return@launch
+                    if (!hasPhotoPermission) {
+                        onRequestPhotoPermission()
+                        return@launch
+                    }
+                    scanning = true
+                    try {
+                        autoScanCoordinator.resetAndScanAllHistory(true)
+                        onScanNowComplete(autoScanCoordinator.queue.value.size)
+                    } finally {
+                        scanning = false
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = autoScanEnabled && !scanning,
+            shape = MaterialTheme.shapes.small,
+        ) {
+            Text("สแกนย้อนหลังทั้งหมด")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "อ่านรูปเก่าในแกลเลอรีทีละชุด (สูงสุด ${AutoScanCursor.BATCH_LIMIT} รูป/ครั้ง) " +
+                "เปิดแอปหรือกดซ้ำเพื่อชุดถัดไป",
+            style = MaterialTheme.typography.bodySmall,
+            color = InkMuted,
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 

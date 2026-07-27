@@ -5,12 +5,27 @@ import org.junit.Test
 
 class AutoScanCursorLogicTest {
     @Test
-    fun firstRunUsesNowWithoutScanningPast() {
-        assertEquals(1_700_000_000L, AutoScanCursor.initialCursor(1_700_000_000L))
+    fun firstRunStartsAtBeginningOfHistory() {
+        assertEquals(0L, AutoScanCursor.initialCursor())
+        assertEquals(0L, AutoScanCursor.BEGINNING_OF_HISTORY)
     }
 
     @Test
-    fun afterScanCursorEqualsScanStart() {
-        assertEquals(1_700_000_100L, AutoScanCursor.advanceToScanStart(1_700_000_100L))
+    fun emptyBatchAdvancesToScanStart() {
+        assertEquals(
+            1_700_000_100L,
+            AutoScanCursor.advanceAfterBatch(emptyList(), 1_700_000_100L),
+        )
+    }
+
+    @Test
+    fun nonEmptyBatchAdvancesToMaxDateAdded() {
+        assertEquals(
+            1_699_999_980L,
+            AutoScanCursor.advanceAfterBatch(
+                listOf(1_699_999_950L, 1_699_999_980L, 1_699_999_900L),
+                1_700_000_100L,
+            ),
+        )
     }
 }

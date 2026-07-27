@@ -47,14 +47,12 @@ class AutoScanCoordinator(
 
     suspend fun runScanIfNeeded(hasPhotoPermission: Boolean) {
         if (!store.isEnabled() || !hasPhotoPermission) return
+        if (scannedThisSession) return
 
         val now = clock()
-        val cursor = store.getLastScanCursorEpochSec()
-        if (cursor == null) {
-            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor(now))
-            return
+        if (store.getLastScanCursorEpochSec() == null) {
+            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor())
         }
-        if (scannedThisSession) return
 
         performScan(now)
         scannedThisSession = true
@@ -65,10 +63,18 @@ class AutoScanCoordinator(
 
         val now = clock()
         if (store.getLastScanCursorEpochSec() == null) {
-            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor(now))
+            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor())
         }
 
         performScan(now)
+        scannedThisSession = true
+    }
+
+    /** Reset cursor to the start of gallery history and scan the next batch. */
+    suspend fun resetAndScanAllHistory(hasPhotoPermission: Boolean) {
+        if (!store.isEnabled() || !hasPhotoPermission) return
+        store.setLastScanCursorEpochSec(AutoScanCursor.BEGINNING_OF_HISTORY)
+        performScan(clock())
         scannedThisSession = true
     }
 
@@ -102,7 +108,7 @@ class AutoScanCoordinator(
         val images = scanner.listNewImages(
             afterEpochSec = cursor,
             extraBucketIds = store.getExtraBucketIds(),
-            limit = 30,
+            limit = AutoScanCursor.BATCH_LIMIT,
         )
         val found = mutableListOf<QueuedSlip>()
         for (image in images) {
@@ -113,6 +119,11 @@ class AutoScanCoordinator(
         if (scanGeneration.get() != generation) return
         _queue.value = found
         _bannerDismissed.value = false
-        store.setLastScanCursorEpochSec(AutoScanCursor.advanceToScanStart(scanStartedAt))
+        store.setLastScanCursorEpochSec(
+            AutoScanCursor.advanceAfterBatch(
+                inspectedDateAddedSecs = images.map { it.dateAddedSec },
+                scanStartedAtEpochSec = scanStartedAt,
+            ),
+        )
     }
 }

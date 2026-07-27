@@ -26,10 +26,16 @@ class AutoScanCoordinatorTest {
     private val uri4 = Uri.parse("content://media/external/images/media/4")
 
     @Test
-    fun firstRunInitializesCursorWithoutScanning() = runBlocking {
+    fun firstRunInitializesCursorAtBeginningAndScans() = runBlocking {
         val store = FakeAutoScanStore(enabled = true, cursor = null)
-        val scanner = FakeGallerySlipScanner()
-        val intake = FakeSlipIntake()
+        val scanner = FakeGallerySlipScanner(
+            images = listOf(scannedImage(uri1, dateAddedSec = 1_500L)),
+        )
+        val intake = FakeSlipIntake(
+            outcomes = mapOf(
+                uri1 to FakeOutcome.Success(candidateOutcome("100.00", SlipIntake.Source.Qr)),
+            ),
+        )
         val coordinator = AutoScanCoordinator(
             store = store,
             scanner = scanner,
@@ -39,9 +45,10 @@ class AutoScanCoordinatorTest {
 
         coordinator.runScanIfNeeded(hasPhotoPermission = true)
 
-        assertEquals(nowEpochSec, store.cursor)
-        assertFalse(scanner.listCalled)
-        assertTrue(coordinator.queue.value.isEmpty())
+        assertTrue(scanner.listCalled)
+        assertEquals(0L, scanner.lastAfterEpochSec)
+        assertEquals(1_500L, store.cursor)
+        assertEquals(1, coordinator.queue.value.size)
     }
 
     @Test
@@ -73,8 +80,51 @@ class AutoScanCoordinatorTest {
         assertEquals(2, coordinator.queue.value.size)
         assertEquals(uri1, coordinator.queue.value[0].uri)
         assertEquals(uri2, coordinator.queue.value[1].uri)
-        assertEquals(scanEpochSec, store.cursor)
+        assertEquals(1_699_999_980L, store.cursor)
         assertFalse(coordinator.bannerDismissed.value)
+    }
+
+    @Test
+    fun emptyBatchAdvancesCursorToNow() = runBlocking {
+        val store = FakeAutoScanStore(enabled = true, cursor = 1_000L)
+        val scanner = FakeGallerySlipScanner(images = emptyList())
+        val intake = FakeSlipIntake()
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        coordinator.runScanIfNeeded(hasPhotoPermission = true)
+
+        assertEquals(scanEpochSec, store.cursor)
+        assertTrue(coordinator.queue.value.isEmpty())
+    }
+
+    @Test
+    fun resetAndScanAllHistoryRestartsFromBeginning() = runBlocking {
+        val store = FakeAutoScanStore(enabled = true, cursor = scanEpochSec)
+        val scanner = FakeGallerySlipScanner(
+            images = listOf(scannedImage(uri1, dateAddedSec = 2_000L)),
+        )
+        val intake = FakeSlipIntake(
+            outcomes = mapOf(
+                uri1 to FakeOutcome.Success(candidateOutcome("100.00", SlipIntake.Source.Qr)),
+            ),
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        coordinator.resetAndScanAllHistory(hasPhotoPermission = true)
+
+        assertEquals(0L, scanner.lastAfterEpochSec)
+        assertEquals(2_000L, store.cursor)
+        assertEquals(1, coordinator.queue.value.size)
     }
 
     @Test
