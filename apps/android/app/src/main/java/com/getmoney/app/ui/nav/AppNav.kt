@@ -282,6 +282,7 @@ private fun MainShell(
                 HomeScreen(
                     budgetRepository = budgetRepository,
                     transactionRepository = transactionRepository,
+                    slipImageStore = slipImageStore,
                     onNavigateBudget = {
                         navController.navigate("budget") {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -292,6 +293,15 @@ private fun MainShell(
                         }
                     },
                     onAddSlip = { navController.navigate("add_slip") },
+                    onViewAllTransactions = {
+                        navController.navigate("tx") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     pendingSlipCount = pendingSlipCount,
                     onReviewPendingSlips = { openSlipQueue() },
                     onDismissPendingBanner = { dismissPendingSlips() },
