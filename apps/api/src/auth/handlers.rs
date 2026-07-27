@@ -1,6 +1,9 @@
 use axum::{extract::State, http::StatusCode, Json};
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+    SqlErr, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -34,7 +37,10 @@ pub struct TokenResponse {
     expires_in: i64,
 }
 
-async fn issue_token_pair(user_id: Uuid, state: &AppState) -> AppResult<TokenResponse> {
+async fn issue_token_pair<C>(user_id: Uuid, db: &C, state: &AppState) -> AppResult<TokenResponse>
+where
+    C: ConnectionTrait,
+{
     let access_token = issue_access_token(user_id, &state.config)?;
     let (refresh_token, token_hash) = generate_refresh_token();
     let now = Utc::now().fixed_offset();
@@ -48,7 +54,7 @@ async fn issue_token_pair(user_id: Uuid, state: &AppState) -> AppResult<TokenRes
         device_label: Set(None),
         created_at: Set(now),
     }
-    .insert(&state.db)
+    .insert(db)
     .await?;
 
     Ok(TokenResponse {
@@ -78,9 +84,15 @@ pub async fn register(
         created_at: Set(Utc::now().fixed_offset()),
     }
     .insert(&state.db)
-    .await?;
+    .await
+    .map_err(|error| match error.sql_err() {
+        Some(SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("email already registered".into())
+        }
+        _ => AppError::Db(error),
+    })?;
 
-    Ok(Json(issue_token_pair(user_id, &state).await?))
+    Ok(Json(issue_token_pair(user_id, &state.db, &state).await?))
 }
 
 pub async fn login(
@@ -97,7 +109,7 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    Ok(Json(issue_token_pair(user.id, &state).await?))
+    Ok(Json(issue_token_pair(user.id, &state.db, &state).await?))
 }
 
 pub async fn refresh(
@@ -115,6 +127,7 @@ pub async fn refresh(
         return Err(AppError::Unauthorized);
     }
 
+    let transaction = state.db.begin().await?;
     let result = refresh_tokens::Entity::update_many()
         .col_expr(
             refresh_tokens::Column::RevokedAt,
@@ -122,13 +135,23 @@ pub async fn refresh(
         )
         .filter(refresh_tokens::Column::Id.eq(token.id))
         .filter(refresh_tokens::Column::RevokedAt.is_null())
-        .exec(&state.db)
+        .exec(&transaction)
         .await?;
     if result.rows_affected != 1 {
+        transaction.rollback().await?;
         return Err(AppError::Unauthorized);
     }
 
-    Ok(Json(issue_token_pair(token.user_id, &state).await?))
+    let response = match issue_token_pair(token.user_id, &transaction, &state).await {
+        Ok(response) => response,
+        Err(error) => {
+            transaction.rollback().await?;
+            return Err(error);
+        }
+    };
+    transaction.commit().await?;
+
+    Ok(Json(response))
 }
 
 pub async fn logout(

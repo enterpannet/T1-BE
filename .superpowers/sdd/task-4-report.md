@@ -80,3 +80,33 @@ also passed. Cursor diagnostics reported no linter errors in changed Rust files.
 - Integration tests require the local Postgres service and `apps/api/.env`.
 - Expired/revoked refresh tokens are retained for later cleanup rather than
   deleted; cleanup is outside Task 4.
+
+## Important Review Fixes
+
+- Registration now translates a database unique-constraint violation into
+  `AppError::Conflict`, so concurrent requests for the same email return one
+  `200` and one `409` instead of exposing a database `500`.
+- Refresh rotation now conditionally revokes the old token and inserts its
+  replacement in one SeaORM transaction. An insertion failure explicitly rolls
+  back the revocation, leaving the old refresh token usable.
+- Added regression coverage for concurrent duplicate registration and forced
+  replacement-token insertion failure. Before the fixes, these tests observed
+  `[200, 500]` and an unusable old token (`401`), respectively.
+
+## Review Fix Verification
+
+Command:
+
+```text
+cargo test --test auth_api --manifest-path apps/api/Cargo.toml
+```
+
+Result:
+
+```text
+running 3 tests
+test failed_refresh_insert_rolls_back_old_token_revocation ... ok
+test concurrent_registration_returns_conflict_instead_of_server_error ... ok
+test auth_endpoints_register_login_rotate_and_logout_all ... ok
+test result: ok. 3 passed; 0 failed
+```
