@@ -54,11 +54,17 @@ object EmvQrParser {
 
     fun toSlipDraft(result: Result, bankHint: String? = null): SlipDraft? {
         val amount = result.amount ?: return null
+        val toName = result.merchantName?.takeIf { it.isNotBlank() }
+        val direction = TransferDirection.OUT
         return SlipDraft(
             amount = amount,
             bank = bankHint ?: currencyToBankHint(result.currency),
             reference = result.reference,
-            note = result.merchantName?.let { "QR: $it" },
+            direction = direction,
+            toName = toName,
+            note = SlipNoteCodec.displayTransferLine(
+                SlipNoteParts(direction = direction, toName = toName),
+            ) ?: toName?.let { "QR: $it" },
         )
     }
 

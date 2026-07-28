@@ -75,6 +75,18 @@ fn fingerprint_is_stable_and_normalized() {
     assert_eq!(a.len(), 64);
 }
 
+#[test]
+fn fingerprint_prefers_reference_only() {
+    let a = slip_fingerprint("100.00", "2026-07-27T10:00:00+07:00", "SCB", "016158070348ATF02045");
+    let b = slip_fingerprint("999.00", "2020-01-01T00:00:00+07:00", "KBank", "016158070348atf02045");
+    assert_eq!(a, b);
+
+    let no_ref_a = slip_fingerprint("100.00", "2026-07-27T10:00:00+07:00", "SCB", "");
+    let no_ref_b = slip_fingerprint("100.00", "2026-07-27T10:00:00+07:00", "scb", "  ");
+    assert_eq!(no_ref_a, no_ref_b);
+    assert_ne!(a, no_ref_a);
+}
+
 #[tokio::test]
 async fn duplicate_slip_post_returns_conflict() {
     let app = test_app().await;
@@ -99,6 +111,34 @@ async fn duplicate_slip_post_returns_conflict() {
 
     let (status, response) =
         request(&app, "POST", "/transactions", slip, Some(&access_token)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(response["error"], "slip already recorded");
+}
+
+#[tokio::test]
+async fn duplicate_slip_same_reference_different_amount_conflicts() {
+    let app = test_app().await;
+    let access_token = register(&app).await;
+    let first = json!({
+        "amount": "100.00",
+        "spent_at": "2026-07-27T10:00:00+07:00",
+        "source": "slip",
+        "bank": "SCB",
+        "reference": "016158070348ATF02045"
+    });
+    let second = json!({
+        "amount": "999.00",
+        "spent_at": "2020-01-01T00:00:00+07:00",
+        "source": "slip",
+        "bank": "KBank",
+        "reference": "016158070348atf02045"
+    });
+
+    let (status, _) = request(&app, "POST", "/transactions", first, Some(&access_token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, response) =
+        request(&app, "POST", "/transactions", second, Some(&access_token)).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(response["error"], "slip already recorded");
 }

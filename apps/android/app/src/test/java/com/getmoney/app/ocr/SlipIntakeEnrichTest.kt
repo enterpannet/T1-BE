@@ -31,4 +31,22 @@ class SlipIntakeEnrichTest {
         assertEquals("10.00", merged.amount)
         assertNull(merged.bank)
     }
+
+    @Test
+    fun prefersOcrRecipientOverWeakQrMerchant() {
+        val qr = SlipDraft(
+            amount = "500.00",
+            toName = "PROMPT PAY",
+            direction = TransferDirection.OUT,
+        )
+        val ocr = SlipDraft(
+            amount = "500.00",
+            fromName = "นาย เกียรติศักดิ์ พ · ธ.กสิกรไทย · xxx-x-x3523-x",
+            toName = "น.ส. น้ำทิพย์ ตาทอง · ธ.กสิกรไทย · xxx-x-x5079-x",
+            direction = TransferDirection.OUT,
+        )
+        val merged = enrichSlipDraftFromOcr(qr, ocr)
+        assertEquals(ocr.toName, merged.toName)
+        assertEquals(ocr.fromName, merged.fromName)
+    }
 }

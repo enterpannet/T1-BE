@@ -8,4 +8,5 @@ data class QueuedSlip(
     val uri: Uri,
     val draft: SlipDraft,
     val source: SlipIntake.Source,
+    val rawText: String? = null,
 )

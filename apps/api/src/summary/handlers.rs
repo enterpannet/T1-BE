@@ -106,7 +106,7 @@ fn percentage(spent: Decimal, allowance: Decimal) -> Decimal {
     if allowance.is_zero() {
         Decimal::ZERO
     } else {
-        spent / allowance * Decimal::from(100)
+        ((spent / allowance) * Decimal::from(100)).round_dp(2)
     }
 }
 
@@ -185,8 +185,8 @@ pub async fn today(
 
     Ok(Json(TodaySummary {
         daily_allowance: figures.daily_allowance,
-        spent,
-        remaining_today: figures.daily_allowance - spent,
+        spent: spent.round_dp(2),
+        remaining_today: (figures.daily_allowance - spent).round_dp(2),
         percent_used: percentage(spent, figures.daily_allowance),
         items: items.into_iter().map(TransactionResponse::from).collect(),
     }))
@@ -207,7 +207,7 @@ pub async fn week(
         .map(|offset| week_start + Duration::days(offset))
         .filter(|date| date.year() == budget.year && date.month() == budget.month as u32)
         .count();
-    let allowance = figures.daily_allowance * Decimal::from(budget_days as u32);
+    let allowance = (figures.daily_allowance * Decimal::from(budget_days as u32)).round_dp(2);
     let items = transactions_between(
         &state,
         user_id,
@@ -220,8 +220,8 @@ pub async fn week(
     Ok(Json(WeekSummary {
         daily_allowance: figures.daily_allowance,
         allowance,
-        spent,
-        remaining: allowance - spent,
+        spent: spent.round_dp(2),
+        remaining: (allowance - spent).round_dp(2),
         percent_used: percentage(spent, allowance),
         items: items.into_iter().map(TransactionResponse::from).collect(),
     }))
@@ -242,11 +242,11 @@ pub async fn month(
     let spent_variable = spent_total(&items);
 
     Ok(Json(MonthSummary {
-        salary: budget.salary,
+        salary: budget.salary.round_dp(2),
         fixed_total: figures.fixed_total,
         remaining: figures.remaining,
         daily_allowance: figures.daily_allowance,
-        spent_variable,
+        spent_variable: spent_variable.round_dp(2),
         percent_of_remaining: percentage(spent_variable, figures.remaining),
     }))
 }

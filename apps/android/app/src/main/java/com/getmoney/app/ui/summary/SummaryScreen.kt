@@ -29,6 +29,8 @@ import com.getmoney.app.ui.components.CarbonPercentBar
 import com.getmoney.app.ui.components.parsePercent
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
+import com.getmoney.app.ui.util.formatMoney
+import com.getmoney.app.ui.util.formatPercentLabel
 
 @Composable
 fun SummaryScreen(budgetRepository: BudgetRepository) {
@@ -149,7 +151,7 @@ private fun SummaryContent(
 
         rows != null && percent != null -> {
             Text(
-                text = "${formatPercent(percent)} used",
+                text = "${formatPercentLabel(percent)} used",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (percent > 100.0) ErrorRed else MaterialTheme.colorScheme.onBackground,
             )
@@ -158,7 +160,7 @@ private fun SummaryContent(
             Spacer(modifier = Modifier.height(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 rows.forEach { (label, value) ->
-                    SummaryRow(label = label, value = value)
+                    SummaryRow(label = label, value = formatMoney(value))
                 }
             }
         }
@@ -170,14 +172,5 @@ private fun SummaryRow(label: String, value: String) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, color = InkMuted)
         Text(text = value, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-private fun formatPercent(percent: Double): String {
-    val rounded = (percent * 100).toLong() / 100.0
-    return if (rounded == rounded.toLong().toDouble()) {
-        "${rounded.toLong()}%"
-    } else {
-        "$rounded%"
     }
 }

@@ -1,30 +1,38 @@
 package com.getmoney.app.ui.slip
 
+import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,14 +44,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.data.cloudinary.CloudUploadStore
 import com.getmoney.app.data.cloudinary.CloudinaryConfig
@@ -53,11 +58,18 @@ import com.getmoney.app.data.tx.DuplicateSlipException
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipDraft
 import com.getmoney.app.ocr.SlipIntake
+import com.getmoney.app.ocr.SlipNoteCodec
+import com.getmoney.app.ocr.SlipNoteParts
+import com.getmoney.app.ocr.TransferDirection
+import com.getmoney.app.ui.components.IconText
+import com.getmoney.app.ui.components.SlipImagePreview
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -99,29 +111,49 @@ fun AddSlipScreen(
     var amount by remember { mutableStateOf("") }
     var bank by remember { mutableStateOf("") }
     var reference by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var direction by remember { mutableStateOf(TransferDirection.OUT) }
+    var fromName by remember { mutableStateOf("") }
+    var toName by remember { mutableStateOf("") }
+    var memo by remember { mutableStateOf("") }
     var spentAtIso by remember { mutableStateOf(defaultSpentAtIso()) }
     var readSourceHint by remember { mutableStateOf<String?>(null) }
     var pendingImageUri by remember { mutableStateOf<Uri?>(null) }
-    var showFullImage by remember { mutableStateOf(false) }
+    var rawOcrText by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
+    var filenameCopied by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val slipFileName = remember(pendingImageUri) {
+        pendingImageUri?.let { resolveUriDisplayName(context, it) }
+    }
 
-    fun applyDraft(draft: SlipDraft, source: SlipIntake.Source, imageUri: Uri? = null) {
+    fun applyDraft(
+        draft: SlipDraft,
+        source: SlipIntake.Source,
+        imageUri: Uri? = null,
+        ocrText: String? = null,
+    ) {
         isManualEntry = false
         amount = draft.amount
         bank = draft.bank.orEmpty()
         reference = draft.reference.orEmpty()
-        note = draft.note.orEmpty()
-        spentAtIso = draft.spentAtIso ?: defaultSpentAtIso()
+        direction = draft.direction ?: TransferDirection.OUT
+        fromName = draft.fromName.orEmpty()
+        toName = draft.toName.orEmpty()
+        memo = draft.note.orEmpty()
+        // Slip path: keep OCR datetime only — never invent "now" (needed for history scan)
+        spentAtIso = draft.spentAtIso.orEmpty()
         readSourceHint = when (source) {
             SlipIntake.Source.Qr -> "อ่านจาก QR บนสลิป"
             SlipIntake.Source.Ocr -> "อ่านจากข้อความบนสลิป (OCR)"
         }
         pendingImageUri = imageUri
+        rawOcrText = ocrText
+        filenameCopied = false
         step = AddSlipStep.Confirm
     }
 
@@ -130,22 +162,47 @@ fun AddSlipScreen(
         amount = ""
         bank = ""
         reference = ""
-        note = ""
+        direction = TransferDirection.OUT
+        fromName = ""
+        toName = ""
+        memo = ""
         spentAtIso = defaultSpentAtIso()
         readSourceHint = null
         pendingImageUri = null
+        rawOcrText = null
         error = null
         step = AddSlipStep.Confirm
     }
 
+    fun composedNote(): String? {
+        val transferLine = SlipNoteCodec.displayTransferLine(
+            SlipNoteParts(
+                direction = direction,
+                fromName = fromName,
+                toName = toName,
+            ),
+        )
+        val memoForStore = memo.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.takeUnless { it == transferLine }
+        return SlipNoteCodec.compose(
+            direction = direction,
+            fromName = fromName,
+            toName = toName,
+            memo = memoForStore,
+        )
+    }
+
     val amountValid = isValidSlipAmount(amount)
+    val spentAtValid = isValidSpentAtIso(spentAtIso)
+    val canSave = amountValid && (isManualEntry || spentAtValid)
 
     fun advanceQueueAfterSkip() {
         val coordinator = autoScanCoordinator ?: return
         coordinator.skipCurrent()
         val next = coordinator.peekCurrent()
         if (next != null) {
-            applyDraft(next.draft, next.source, imageUri = next.uri)
+            applyDraft(next.draft, next.source, imageUri = next.uri, ocrText = next.rawText)
             error = null
         } else {
             onDone()
@@ -157,7 +214,7 @@ fun AddSlipScreen(
         coordinator.removeCurrentAfterSave()
         val next = coordinator.peekCurrent()
         if (next != null) {
-            applyDraft(next.draft, next.source, imageUri = next.uri)
+            applyDraft(next.draft, next.source, imageUri = next.uri, ocrText = next.rawText)
             error = null
         } else {
             onDone()
@@ -178,19 +235,29 @@ fun AddSlipScreen(
         }
     }
 
-    fun processImageUri(uri: Uri) {
+    fun processImageUri(uri: Uri, failureStep: AddSlipStep = AddSlipStep.Pick) {
         step = AddSlipStep.Processing
         error = null
         readSourceHint = null
         scope.launch {
             try {
                 val outcome = slipIntake.process(uri)
-                applyDraft(outcome.draft, outcome.source, imageUri = uri)
+                applyDraft(
+                    outcome.draft,
+                    outcome.source,
+                    imageUri = uri,
+                    ocrText = outcome.rawText,
+                )
             } catch (throwable: Throwable) {
                 error = throwable.message ?: "อ่านสลิปไม่สำเร็จ"
-                step = AddSlipStep.Pick
+                step = failureStep
             }
         }
+    }
+
+    fun rescanCurrentImage() {
+        val uri = pendingImageUri ?: return
+        processImageUri(uri, failureStep = AddSlipStep.Confirm)
     }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -198,11 +265,23 @@ fun AddSlipScreen(
     ) { uri: Uri? ->
         if (uri == null) {
             if (step == AddSlipStep.Processing) {
-                step = AddSlipStep.Pick
+                step = if (pendingImageUri != null) AddSlipStep.Confirm else AddSlipStep.Pick
             }
             return@rememberLauncherForActivityResult
         }
-        processImageUri(uri)
+        val failureStep =
+            if (pendingImageUri != null || step == AddSlipStep.Confirm) {
+                AddSlipStep.Confirm
+            } else {
+                AddSlipStep.Pick
+            }
+        processImageUri(uri, failureStep = failureStep)
+    }
+
+    fun launchPickImage() {
+        pickImageLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
     }
 
     LaunchedEffect(sharedImageUri) {
@@ -220,7 +299,9 @@ fun AddSlipScreen(
             return@LaunchedEffect
         }
         queueInitialTotal = initial.size
-        coordinator.peekCurrent()?.let { applyDraft(it.draft, it.source, imageUri = it.uri) } ?: onDone()
+        coordinator.peekCurrent()?.let {
+            applyDraft(it.draft, it.source, imageUri = it.uri, ocrText = it.rawText)
+        } ?: onDone()
     }
 
     Column(
@@ -265,7 +346,10 @@ fun AddSlipScreen(
                     colors = CarbonButtonDefaults.primaryButtonColors(),
                     elevation = CarbonButtonDefaults.primaryButtonElevation(),
                 ) {
-                    Text("Pick slip image")
+                    IconText(
+                        imageVector = Icons.Outlined.Image,
+                        text = "Pick slip image",
+                    )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(
@@ -307,24 +391,122 @@ fun AddSlipScreen(
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(previewUri)
-                            .crossfade(true)
-                            .build(),
+                    SlipImagePreview(
+                        data = previewUri,
+                        showTapHint = true,
                         contentDescription = "Slip preview",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(120.dp)
-                            .background(InkMuted.copy(alpha = 0.12f))
-                            .clickable { showFullImage = true },
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    slipFileName?.let { fileName ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = fileName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkMuted,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(fileName))
+                                    filenameCopied = true
+                                },
+                                enabled = !saving && !sharing,
+                            ) {
+                                IconText(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    text = if (filenameCopied) "คัดลอกแล้ว" else "คัดลอกชื่อไฟล์",
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    sharing = true
+                                    error = null
+                                    scope.launch {
+                                        val caption = SlipShareHelper.buildDebugCaption(
+                                            fileName = fileName,
+                                            amount = amount,
+                                            bank = bank,
+                                            reference = reference,
+                                            fromName = fromName,
+                                            toName = toName,
+                                            rawOcrText = rawOcrText,
+                                        )
+                                        val intent = withContext(Dispatchers.IO) {
+                                            SlipShareHelper.buildShareIntent(
+                                                context = context,
+                                                sourceUri = previewUri,
+                                                fileName = fileName,
+                                                caption = caption,
+                                            )
+                                        }
+                                        if (intent == null) {
+                                            error = "แชร์สลิปไม่สำเร็จ"
+                                        } else {
+                                            context.startActivity(
+                                                Intent.createChooser(intent, "แชร์สลิป"),
+                                            )
+                                        }
+                                        sharing = false
+                                    }
+                                },
+                                enabled = !saving && !sharing,
+                            ) {
+                                IconText(
+                                    imageVector = Icons.Outlined.Share,
+                                    text = if (sharing) "กำลังแชร์…" else "แชร์สลิป",
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "แตะรูปเพื่อดูขนาดเต็ม",
+                        text = "ข้อมูลผิด? สแกนรูปเดิมซ้ำ หรือเลือกรูปอื่น",
                         style = MaterialTheme.typography.bodySmall,
                         color = InkMuted,
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { rescanCurrentImage() },
+                            enabled = !saving,
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            IconText(
+                                imageVector = Icons.Outlined.Refresh,
+                                text = "สแกนใหม่",
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { launchPickImage() },
+                            enabled = !saving,
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            IconText(
+                                imageVector = Icons.Outlined.Image,
+                                text = "เลือกรูปอื่น",
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                } ?: run {
+                    OutlinedButton(
+                        onClick = { launchPickImage() },
+                        enabled = !saving,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        IconText(
+                            imageVector = Icons.Outlined.Image,
+                            text = "เลือกรูปเพื่อสแกน",
+                        )
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 OutlinedTextField(
@@ -364,18 +546,75 @@ fun AddSlipScreen(
                 OutlinedTextField(
                     value = spentAtIso,
                     onValueChange = { spentAtIso = it },
-                    label = { Text("Spent at (ISO)") },
+                    label = { Text("วันเวลาบนสลิป") },
+                    placeholder = { Text("2026-06-07T07:03:00+07:00") },
+                    supportingText = {
+                        Text(
+                            when {
+                                !isManualEntry && spentAtIso.isBlank() ->
+                                    "ต้องมีวันเวลาที่โอน/รับจริงจากสลิป (ไม่ใช่วันที่กดบันทึก)"
+                                !isManualEntry && !spentAtValid ->
+                                    "รูปแบบวันเวลาไม่ถูกต้อง"
+                                else ->
+                                    "ใช้เวลาที่โอนจริงบนสลิป — วันบันทึกแยกต่างหากได้"
+                            },
+                        )
+                    },
+                    isError = !isManualEntry && spentAtIso.isNotBlank() && !spentAtValid ||
+                        (!isManualEntry && spentAtIso.isBlank()),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "ทิศทาง",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = direction == TransferDirection.OUT,
+                        onClick = { direction = TransferDirection.OUT },
+                        label = { Text("โอนออก") },
+                    )
+                    FilterChip(
+                        selected = direction == TransferDirection.IN,
+                        onClick = { direction = TransferDirection.IN },
+                        label = { Text("รับเข้า") },
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = fromName,
+                    onValueChange = { fromName = it },
+                    label = { Text("จาก (ต้นทาง)") },
+                    placeholder = { Text("คน / บริษัท / บัญชี ฯลฯ") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = { Text("Note") },
+                    value = toName,
+                    onValueChange = { toName = it },
+                    label = { Text("ถึง (ปลายทาง)") },
+                    placeholder = { Text("คน / บริษัท / บัญชี ฯลฯ") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = memo,
+                    onValueChange = { memo = it },
+                    label = { Text("บันทึกช่วยจำ") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 5,
                     colors = OutlinedTextFieldDefaults.colors(),
                 )
                 Spacer(modifier = Modifier.height(24.dp))
@@ -383,13 +622,14 @@ fun AddSlipScreen(
                     onClick = {
                         saving = true
                         error = null
+                        val noteToSave = composedNote()
                         scope.launch {
                             val saveResult = if (isManualEntry) {
                                 transactionRepository.createManualTransaction(
                                     amount = amount.trim(),
                                     spentAtIso = spentAtIso.trim().ifBlank { null },
                                     bank = bank.trim().ifBlank { null },
-                                    note = note.trim().ifBlank { null },
+                                    note = noteToSave,
                                 )
                             } else {
                                 transactionRepository.createSlipTransaction(
@@ -397,7 +637,7 @@ fun AddSlipScreen(
                                     spentAtIso = spentAtIso.trim().ifBlank { null },
                                     bank = bank.trim().ifBlank { null },
                                     reference = reference.trim().ifBlank { null },
-                                    note = note.trim().ifBlank { null },
+                                    note = noteToSave,
                                 )
                             }
                             saveResult.fold(
@@ -428,34 +668,25 @@ fun AddSlipScreen(
                             saving = false
                         }
                     },
-                    enabled = !saving && amountValid,
+                    enabled = !saving && canSave,
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.small,
                     colors = CarbonButtonDefaults.primaryButtonColors(),
                     elevation = CarbonButtonDefaults.primaryButtonElevation(),
                 ) {
-                    Text(if (saving) "Saving…" else "Confirm & save")
+                    IconText(
+                        imageVector = Icons.Outlined.Check,
+                        text = if (saving) "Saving…" else "Confirm & save",
+                    )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
                 if (isQueueMode) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     TextButton(
                         onClick = { advanceQueueAfterSkip() },
                         enabled = !saving,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Skip")
-                    }
-                } else {
-                    TextButton(
-                        onClick = {
-                            step = AddSlipStep.Pick
-                            pickImageLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Pick another image")
+                        Text("ข้าม")
                     }
                 }
             }
@@ -478,47 +709,6 @@ fun AddSlipScreen(
             Text("Cancel")
         }
     }
-
-    if (showFullImage) {
-        val fullUri = pendingImageUri
-        if (fullUri != null) {
-            Dialog(
-                onDismissRequest = { showFullImage = false },
-                properties = DialogProperties(usePlatformDefaultWidth = false),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.92f))
-                        .clickable { showFullImage = false },
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(fullUri)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Slip full size",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                            .align(Alignment.Center)
-                            .clickable(enabled = false) {},
-                    )
-                    TextButton(
-                        onClick = { showFullImage = false },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp),
-                    ) {
-                        Text("ปิด", color = MaterialTheme.colorScheme.onPrimary)
-                    }
-                }
-            }
-        } else {
-            showFullImage = false
-        }
-    }
 }
 
 private fun defaultSpentAtIso(): String {
@@ -532,4 +722,76 @@ internal fun isValidSlipAmount(raw: String): Boolean {
     val normalized = trimmed.replace(",", "")
     val value = normalized.toDoubleOrNull() ?: return false
     return value > 0.0
+}
+
+/** Accept ISO-8601 with optional offset (slip transfer time). */
+internal fun isValidSpentAtIso(raw: String): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return false
+    return runCatching {
+        java.time.OffsetDateTime.parse(trimmed)
+        true
+    }.getOrElse {
+        runCatching {
+            java.time.ZonedDateTime.parse(trimmed)
+            true
+        }.getOrDefault(false)
+    }
+}
+
+/** Best-effort display name for gallery / share / file:// URIs (for OCR debug). */
+internal fun resolveUriDisplayName(context: Context, uri: Uri): String {
+    val candidates = linkedSetOf<String>()
+
+    if (uri.scheme.equals("content", ignoreCase = true)) {
+        runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0) {
+                            cursor.getString(idx)?.trim()?.takeIf { it.isNotEmpty() }?.let { candidates += it }
+                        }
+                    }
+                }
+        }
+    }
+
+    uri.lastPathSegment
+        ?.let { Uri.decode(it) }
+        ?.substringAfterLast('/')
+        ?.substringAfterLast(':')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { candidates += it }
+
+    uri.path
+        ?.let { Uri.decode(it) }
+        ?.substringAfterLast('/')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { candidates += it }
+
+    fun hasImageExt(name: String): Boolean {
+        val ext = name.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+        return ext in setOf("jpg", "jpeg", "png", "webp", "heic", "heif")
+    }
+
+    val withExt = candidates.filter { hasImageExt(it) }
+    var best = withExt.maxByOrNull { it.length }
+        ?: candidates.maxByOrNull { it.length }
+        ?: uri.toString()
+
+    // Photo picker sometimes returns bare "1607" — attach mime extension for searchability
+    if (!best.contains('.')) {
+        val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty()
+        val ext = when {
+            mime.equals("image/png", ignoreCase = true) -> "png"
+            mime.equals("image/webp", ignoreCase = true) -> "webp"
+            mime.startsWith("image/") -> "jpg"
+            else -> "jpg"
+        }
+        best = "$best.$ext"
+    }
+    return best
 }

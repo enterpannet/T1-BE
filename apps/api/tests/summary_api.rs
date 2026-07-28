@@ -141,11 +141,11 @@ async fn today_week_and_month_summaries_use_bangkok_calendar_boundaries() {
     assert_eq!(decimal(&today_summary, "spent"), spent);
     assert_eq!(
         decimal(&today_summary, "remaining_today"),
-        figures.daily_allowance - spent
+        (figures.daily_allowance - spent).round_dp(2)
     );
     assert_eq!(
         decimal(&today_summary, "percent_used"),
-        spent / figures.daily_allowance * Decimal::from(100)
+        ((spent / figures.daily_allowance) * Decimal::from(100)).round_dp(2)
     );
     assert_eq!(today_summary["items"].as_array().unwrap().len(), 2);
 
@@ -155,7 +155,7 @@ async fn today_week_and_month_summaries_use_bangkok_calendar_boundaries() {
         .filter(|date| date.year() == today.year() && date.month() == today.month())
         .count();
     let expected_week_allowance =
-        figures.daily_allowance * Decimal::from(days_in_budget_month as u32);
+        (figures.daily_allowance * Decimal::from(days_in_budget_month as u32)).round_dp(2);
     let (status, week_summary) = request(
         &app,
         "GET",
@@ -188,7 +188,7 @@ async fn today_week_and_month_summaries_use_bangkok_calendar_boundaries() {
     );
     assert_eq!(
         decimal(&month_summary, "percent_of_remaining"),
-        spent / figures.remaining * Decimal::from(100)
+        ((spent / figures.remaining) * Decimal::from(100)).round_dp(2)
     );
 }
 

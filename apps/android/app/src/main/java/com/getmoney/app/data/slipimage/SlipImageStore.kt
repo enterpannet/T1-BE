@@ -60,7 +60,7 @@ class SlipImageStore private constructor(
     }
 
     fun delete(transactionId: String) {
-        fileFor(transactionId)?.delete()
+        slipsDir.resolve("$transactionId.jpg").delete()
     }
 
     private fun openInputStream(source: Uri): InputStream? {

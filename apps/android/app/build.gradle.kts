@@ -37,8 +37,8 @@ android {
         applicationId = "com.getmoney.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.11"
+        versionCode = 49
+        versionName = "1.48"
         buildConfigField("String", "API_BASE_URL", "\"https://tmd.deals/\"")
         val cloudinaryCloudName = envOrProp("CLOUDINARY_CLOUD_NAME")
         val cloudinaryUploadPreset = envOrProp("CLOUDINARY_UPLOAD_PRESET", "UPLOAD_PRESET")
@@ -73,6 +73,12 @@ android {
         compose = true
         buildConfig = true
     }
+
+    androidResources {
+        noCompress += "traineddata"
+        noCompress += "onnx"
+        noCompress += "yml"
+    }
 }
 
 dependencies {
@@ -88,6 +94,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-text-google-fonts:1.7.6")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
@@ -96,8 +103,12 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.google.mlkit:text-recognition:16.0.1")
+    // QR: ML Kit barcode. Slip text: PaddleOCR Thai (primary) + Tesseract fallback.
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    implementation(project(":ppocr-sdk"))
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.21.1")
+    implementation("com.quickbirdstudios:opencv:4.5.3")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     testImplementation("junit:junit:4.13.2")

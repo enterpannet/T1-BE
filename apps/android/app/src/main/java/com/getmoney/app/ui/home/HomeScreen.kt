@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.NavigateNext
+import androidx.compose.material.icons.outlined.AddAPhoto
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -33,12 +38,14 @@ import com.getmoney.app.data.budget.BudgetRequiredException
 import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ui.components.CarbonPercentBar
+import com.getmoney.app.ui.components.IconText
 import com.getmoney.app.ui.components.parsePercent
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
 import com.getmoney.app.ui.tx.DeleteTransactionDialog
 import com.getmoney.app.ui.tx.EditTransactionDialog
+import com.getmoney.app.ui.tx.TransactionDetailDialog
 import com.getmoney.app.ui.tx.TransactionListItem
 import com.getmoney.app.ui.util.formatMoney
 import com.getmoney.app.ui.util.formatPercentLabel
@@ -54,16 +61,19 @@ fun HomeScreen(
     onViewAllTransactions: () -> Unit,
     pendingSlipCount: Int = 0,
     onReviewPendingSlips: () -> Unit = {},
-    onDismissPendingBanner: () -> Unit = {},
+    onExportReviewZip: () -> Unit = {},
+    zipExporting: Boolean = false,
 ) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var summary by remember { mutableStateOf<TodaySummaryResponse?>(null) }
+    var selectedTransaction by remember { mutableStateOf<TransactionResponse?>(null) }
     var editingTransaction by remember { mutableStateOf<TransactionResponse?>(null) }
     var deletingTransaction by remember { mutableStateOf<TransactionResponse?>(null) }
     var actionInProgress by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scrollState = rememberScrollState()
 
     suspend fun loadSummary() {
         loading = true
@@ -84,6 +94,22 @@ fun HomeScreen(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             loadSummary()
         }
+    }
+
+    selectedTransaction?.let { transaction ->
+        TransactionDetailDialog(
+            transaction = transaction,
+            slipImageStore = slipImageStore,
+            onDismiss = { selectedTransaction = null },
+            onEdit = {
+                selectedTransaction = null
+                editingTransaction = transaction
+            },
+            onDelete = {
+                selectedTransaction = null
+                deletingTransaction = transaction
+            },
+        )
     }
 
     editingTransaction?.let { transaction ->
@@ -122,7 +148,6 @@ fun HomeScreen(
                     transactionRepository.deleteTransaction(transaction.id)
                         .fold(
                             onSuccess = {
-                                slipImageStore.delete(transaction.id)
                                 deletingTransaction = null
                                 loadSummary()
                             },
@@ -137,6 +162,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(horizontal = 24.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Top,
     ) {
@@ -145,35 +171,50 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        if (pendingSlipCount > 0) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "พบสลิปใหม่ $pendingSlipCount ใบ",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground,
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Always visible — not buried under the transaction list
+        Button(
+            onClick = onAddSlip,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small,
+            colors = CarbonButtonDefaults.primaryButtonColors(),
+            elevation = CarbonButtonDefaults.primaryButtonElevation(),
+        ) {
+            IconText(
+                imageVector = Icons.Outlined.AddAPhoto,
+                text = "Add slip",
             )
-            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Soft notice — stays after dialog "ภายหลัง" so user can open the queue later
+        if (pendingSlipCount > 0) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "พบสลิปรอตรวจ $pendingSlipCount ใบ — กดดูเลยเมื่อพร้อม หรือส่ง ZIP ให้ช่วยดู",
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkMuted,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(
-                    onClick = onReviewPendingSlips,
-                    shape = MaterialTheme.shapes.small,
-                    colors = CarbonButtonDefaults.primaryButtonColors(),
-                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
-                ) {
-                    Text("ดู")
+                TextButton(onClick = onReviewPendingSlips) {
+                    Text("ดูเลย")
                 }
-                TextButton(onClick = onDismissPendingBanner) {
-                    Text("ภายหลัง")
+                TextButton(
+                    onClick = onExportReviewZip,
+                    enabled = !zipExporting,
+                ) {
+                    Text(if (zipExporting) "กำลังสร้าง ZIP…" else "ส่งออก ZIP")
                 }
             }
         }
-        Spacer(modifier = Modifier.height(32.dp))
+
+        Spacer(modifier = Modifier.height(28.dp))
 
         when {
-            loading -> {
+            loading && summary == null -> {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -182,7 +223,7 @@ fun HomeScreen(
                 }
             }
 
-            error != null -> {
+            error != null && summary == null -> {
                 Text(
                     text = error!!,
                     style = MaterialTheme.typography.bodyMedium,
@@ -205,7 +246,7 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
                     text = "${formatPercentLabel(percent)} used",
@@ -215,51 +256,57 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 CarbonPercentBar(percent = percent)
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                SummaryRow(label = "Spent today", value = formatMoney(data.spent))
+                SummaryRow(label = "Spent today", value = data.spent)
                 Spacer(modifier = Modifier.height(8.dp))
-                SummaryRow(label = "Remaining today", value = formatMoney(data.remainingToday))
+                SummaryRow(label = "Remaining today", value = data.remainingToday)
 
-                if (data.items.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Transactions",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
+                Spacer(modifier = Modifier.height(28.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "ล่าสุดวันนี้",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    TextButton(onClick = onViewAllTransactions) {
+                        IconText(
+                            imageVector = Icons.AutoMirrored.Outlined.NavigateNext,
+                            text = "ดูทั้งหมด",
                         )
-                        TextButton(onClick = onViewAllTransactions) {
-                            Text("ดูทั้งหมด")
-                        }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    data.items
-                        .let { takeLatestTransactions(it) }
-                        .forEach { item ->
-                            TransactionListItem(
-                                transaction = item,
-                                slipImageStore = slipImageStore,
-                                onEdit = { editingTransaction = item },
-                                onDelete = { deletingTransaction = item },
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val latest = takeLatestTransactions(data.items)
+                if (latest.isEmpty()) {
+                    Text(
+                        text = "ยังไม่มีรายการวันนี้",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = InkMuted,
+                    )
+                } else {
+                    latest.forEach { item ->
+                        TransactionListItem(
+                            transaction = item,
+                            slipImageStore = slipImageStore,
+                            onClick = { selectedTransaction = item },
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
-                Button(
-                    onClick = onAddSlip,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.small,
-                    colors = CarbonButtonDefaults.primaryButtonColors(),
-                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
-                ) {
-                    Text("Add slip")
+                if (error != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = error!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ErrorRed,
+                    )
                 }
             }
         }

@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,10 +35,14 @@ import androidx.compose.ui.unit.dp
 import com.getmoney.app.data.api.BudgetMonthResponse
 import com.getmoney.app.data.api.FixedExpenseResponse
 import com.getmoney.app.data.budget.BudgetRepository
+import com.getmoney.app.ui.components.IconText
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.ErrorRed
 import com.getmoney.app.ui.theme.InkMuted
+import com.getmoney.app.ui.util.formatMoney
 import kotlinx.coroutines.launch
+import java.time.YearMonth
+import java.time.ZoneId
 
 @Composable
 fun BudgetScreen(budgetRepository: BudgetRepository) {
@@ -232,7 +239,10 @@ fun BudgetScreen(budgetRepository: BudgetRepository) {
                         colors = CarbonButtonDefaults.primaryButtonColors(),
                         elevation = CarbonButtonDefaults.primaryButtonElevation(),
                     ) {
-                        Text("Add fixed expense")
+                        IconText(
+                            imageVector = Icons.Outlined.Add,
+                            text = "Add fixed expense",
+                        )
                     }
                 }
 
@@ -266,7 +276,7 @@ private fun FigureRow(label: String, value: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, color = InkMuted)
-        Text(text = value, style = MaterialTheme.typography.titleMedium)
+        Text(text = formatMoney(value), style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -282,10 +292,14 @@ private fun FixedExpenseRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = expense.name, style = MaterialTheme.typography.bodyLarge)
-            Text(text = expense.amount, style = MaterialTheme.typography.bodyMedium, color = InkMuted)
+            Text(text = expense.amount.let(::formatMoney), style = MaterialTheme.typography.bodyMedium, color = InkMuted)
         }
         TextButton(onClick = onDelete) {
-            Text("Remove", color = ErrorRed)
+            IconText(
+                imageVector = Icons.Outlined.Delete,
+                text = "Remove",
+                tint = ErrorRed,
+            )
         }
     }
 }

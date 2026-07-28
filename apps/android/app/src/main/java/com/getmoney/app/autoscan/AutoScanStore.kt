@@ -21,11 +21,21 @@ class AutoScanStore(context: Context) : AutoScanStoreReader {
 
     val enabled: Flow<Boolean> = dataStore.data.map { it[ENABLED] ?: true }
 
+    val autoSaveEnabled: Flow<Boolean> = dataStore.data.map { it[AUTO_SAVE] ?: true }
+
     override suspend fun isEnabled(): Boolean = dataStore.data.first()[ENABLED] ?: true
+
+    override suspend fun isAutoSaveEnabled(): Boolean = dataStore.data.first()[AUTO_SAVE] ?: true
 
     suspend fun setEnabled(value: Boolean) {
         dataStore.edit { prefs ->
             prefs[ENABLED] = value
+        }
+    }
+
+    suspend fun setAutoSaveEnabled(value: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[AUTO_SAVE] = value
         }
     }
 
@@ -54,6 +64,7 @@ class AutoScanStore(context: Context) : AutoScanStoreReader {
 
     companion object {
         private val ENABLED = booleanPreferencesKey("enabled")
+        private val AUTO_SAVE = booleanPreferencesKey("auto_save")
         private val LAST_SCAN_CURSOR_EPOCH_SEC = longPreferencesKey("last_scan_cursor_epoch_sec")
         private val EXTRA_BUCKET_IDS = stringPreferencesKey("extra_bucket_ids")
     }

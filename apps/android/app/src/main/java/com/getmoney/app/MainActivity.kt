@@ -20,8 +20,10 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.GallerySlipScanner
 import com.getmoney.app.autoscan.SlipIntakeReader
+import com.getmoney.app.autoscan.TransactionSlipAutoPersister
 import com.getmoney.app.data.cloudinary.CloudUploadStore
 import com.getmoney.app.data.cloudinary.CloudinaryUploader
+import com.getmoney.app.data.identity.MyIdentityStore
 import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
@@ -45,15 +47,18 @@ class MainActivity : ComponentActivity() {
             budgetApi = apiClient.createService(BudgetApi::class.java),
             summaryApi = apiClient.createService(SummaryApi::class.java),
         )
+        val slipImageStore = SlipImageStore(applicationContext)
         val transactionRepository = TransactionRepository(
             transactionApi = apiClient.createService(TransactionApi::class.java),
+            slipImageStore = slipImageStore,
         )
-        val slipImageStore = SlipImageStore(applicationContext)
         val cloudUploadStore = CloudUploadStore(applicationContext)
         val cloudinaryUploader = CloudinaryUploader()
+        val myIdentityStore = MyIdentityStore(applicationContext)
         val slipIntake = SlipIntake(
             qrScanner = SlipQrScanner(applicationContext),
             ocr = SlipOcr(applicationContext),
+            myIdentityStore = myIdentityStore,
         )
         val autoScanStore = AutoScanStore(applicationContext)
         val gallerySlipScanner = GallerySlipScanner(applicationContext)
@@ -61,6 +66,10 @@ class MainActivity : ComponentActivity() {
             store = autoScanStore,
             scanner = gallerySlipScanner,
             intake = SlipIntakeReader { uri -> slipIntake.process(uri) },
+            autoPersister = TransactionSlipAutoPersister(
+                transactionRepository = transactionRepository,
+                slipImageStore = slipImageStore,
+            ),
         )
 
         setContent {
@@ -75,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     slipIntake = slipIntake,
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,
+                    myIdentityStore = myIdentityStore,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = { sharedImageUri = null },
                 )

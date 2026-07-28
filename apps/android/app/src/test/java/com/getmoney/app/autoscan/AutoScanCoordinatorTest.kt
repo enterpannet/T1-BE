@@ -26,6 +26,31 @@ class AutoScanCoordinatorTest {
     private val uri4 = Uri.parse("content://media/external/images/media/4")
 
     @Test
+    fun emptyBucketsSkipsScanAndDoesNotAdvanceCursor() = runBlocking {
+        val store = FakeAutoScanStore(enabled = true, cursor = 1_000L, extraBucketIds = emptySet())
+        val scanner = FakeGallerySlipScanner(
+            images = listOf(scannedImage(uri1, dateAddedSec = 1_500L)),
+        )
+        val intake = FakeSlipIntake(
+            outcomes = mapOf(
+                uri1 to FakeOutcome.Success(candidateOutcome("100.00", SlipIntake.Source.Qr)),
+            ),
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        coordinator.runScanIfNeeded(hasPhotoPermission = true)
+
+        assertFalse(scanner.listCalled)
+        assertTrue(coordinator.queue.value.isEmpty())
+        assertEquals(1_000L, store.cursor)
+    }
+
+    @Test
     fun firstRunInitializesCursorAtBeginningAndScans() = runBlocking {
         val store = FakeAutoScanStore(enabled = true, cursor = null)
         val scanner = FakeGallerySlipScanner(
@@ -267,6 +292,211 @@ class AutoScanCoordinatorTest {
         assertTrue(coordinator.bannerDismissed.value)
     }
 
+    @Test
+    fun autoSaveSavesAndQueuesOnlyNeedsReview() = runBlocking {
+        val store = FakeAutoScanStore(enabled = true, cursor = 1_000L, autoSaveEnabled = true)
+        val reviewUri = uri2
+        val scanner = FakeGallerySlipScanner(
+            images = listOf(
+                scannedImage(uri1, dateAddedSec = 1_500L),
+                scannedImage(reviewUri, dateAddedSec = 1_600L),
+                scannedImage(uri3, dateAddedSec = 1_700L),
+            ),
+        )
+        val intake = FakeSlipIntake(
+            outcomes = mapOf(
+                uri1 to FakeOutcome.Success(
+                    candidateOutcome(
+                        amount = "100.00",
+                        source = SlipIntake.Source.Ocr,
+                        reference = "REF-A",
+                        spentAtIso = "2026-06-07T07:03:00+07:00",
+                    ),
+                ),
+                reviewUri to FakeOutcome.Success(
+                    candidateOutcome(
+                        amount = "200.00",
+                        source = SlipIntake.Source.Ocr,
+                        reference = "REF-B",
+                        // missing spentAt → needs review
+                    ),
+                ),
+                uri3 to FakeOutcome.Success(
+                    candidateOutcome(
+                        amount = "50.00",
+                        source = SlipIntake.Source.Ocr,
+                        reference = "REF-C",
+                        spentAtIso = "2026-06-08T01:00:00+07:00",
+                    ),
+                ),
+            ),
+        )
+        val persister = FakePersister(
+            mapOf(
+                uri1 to AutoSaveItemResult.Saved,
+                reviewUri to AutoSaveItemResult.NeedsReview,
+                uri3 to AutoSaveItemResult.Duplicate,
+            ),
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            autoPersister = persister,
+            clock = { scanEpochSec },
+        )
+
+        coordinator.runScanNow(hasPhotoPermission = true)
+
+        assertEquals(1, coordinator.queue.value.size)
+        assertEquals(reviewUri, coordinator.queue.value.single().uri)
+        val summary = coordinator.consumeAutoSaveSummary()
+        assertEquals(1, summary!!.saved)
+        assertEquals(1, summary.duplicates)
+        assertEquals(1, summary.needReview)
+        assertEquals(3, summary.folderFileCount)
+        assertEquals(2, summary.alreadySavedCount())
+        assertEquals(
+            "ในโฟลเดอร์มี 3 ไฟล์ · สำเร็จ 1 · ข้าม 1 · ต้องตรวจ 1",
+            summary.snackbarMessage(),
+        )
+    }
+
+    @Test
+    fun fullHistoryScansAllBatchesAndAggregatesSummary() = runBlocking {
+        val images = (1..250).map { i ->
+            scannedImage(Uri.parse("content://media/external/images/media/$i"), dateAddedSec = i.toLong())
+        }
+        val store = FakeAutoScanStore(enabled = true, cursor = scanEpochSec, autoSaveEnabled = true)
+        val scanner = FakeGallerySlipScanner(images = images)
+        val outcomes = images.associate { img ->
+            img.uri to FakeOutcome.Success(
+                candidateOutcome(
+                    amount = "10.00",
+                    source = SlipIntake.Source.Qr,
+                    reference = "R-${img.dateAddedSec}",
+                    spentAtIso = "2026-06-01T12:00:00+07:00",
+                ),
+            )
+        }
+        val persister = FakePersister(images.associate { it.uri to AutoSaveItemResult.Saved })
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = FakeSlipIntake(outcomes),
+            autoPersister = persister,
+            clock = { scanEpochSec },
+        )
+
+        coordinator.resetAndScanAllHistory(hasPhotoPermission = true)
+
+        assertEquals(3, scanner.listCallCount)
+        assertEquals(250L, store.cursor)
+        assertTrue(coordinator.queue.value.isEmpty())
+        val summary = coordinator.consumeAutoSaveSummary()
+        assertEquals(250, summary!!.saved)
+        assertEquals(250, summary.folderFileCount)
+        assertEquals(ScanProgress.Phase.Done, coordinator.scanProgress.value.phase)
+        assertEquals(250, coordinator.scanProgress.value.overallTotal)
+    }
+
+    @Test
+    fun runScanNowStillSingleBatch() = runBlocking {
+        val images = (1..150).map { i ->
+            scannedImage(Uri.parse("content://media/external/images/media/$i"), dateAddedSec = i.toLong())
+        }
+        val store = FakeAutoScanStore(enabled = true, cursor = 0L)
+        val scanner = FakeGallerySlipScanner(images = images)
+        val outcomes = images.associate { img ->
+            img.uri to FakeOutcome.Success(candidateOutcome("10.00", SlipIntake.Source.Qr))
+        }
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = FakeSlipIntake(outcomes),
+            clock = { scanEpochSec },
+        )
+
+        coordinator.runScanNow(hasPhotoPermission = true)
+
+        assertEquals(1, scanner.listCallCount)
+        assertEquals(100, coordinator.queue.value.size)
+        assertEquals(100L, store.cursor)
+    }
+
+    @Test
+    fun pauseAndResumeContinuesFullHistory() = runBlocking {
+        val images = (1..5).map { i ->
+            scannedImage(Uri.parse("content://media/external/images/media/$i"), dateAddedSec = i.toLong())
+        }
+        val store = FakeAutoScanStore(enabled = true, cursor = 0L)
+        val scanner = FakeGallerySlipScanner(images = images)
+        val intake = SlowFakeSlipIntake(
+            images.associate { img ->
+                img.uri to FakeOutcome.Success(candidateOutcome("10.00", SlipIntake.Source.Qr))
+            },
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        val job = async { coordinator.resetAndScanAllHistory(hasPhotoPermission = true) }
+        intake.awaitProcessingStarted()
+        coordinator.pauseScan()
+        intake.releaseProcessing()
+        // After first image finishes, coordinator should park on pause before image 2
+        var paused = false
+        repeat(40) {
+            if (coordinator.scanProgress.value.phase == ScanProgress.Phase.Paused) {
+                paused = true
+                return@repeat
+            }
+            kotlinx.coroutines.delay(25)
+        }
+        assertTrue(paused)
+        coordinator.resumeScan()
+        job.await()
+
+        assertEquals(5, coordinator.queue.value.size)
+        assertEquals(ScanProgress.Phase.Done, coordinator.scanProgress.value.phase)
+    }
+
+    @Test
+    fun stopMidScanKeepsPartialQueueAndSummary() = runBlocking {
+        val images = (1..5).map { i ->
+            scannedImage(Uri.parse("content://media/external/images/media/$i"), dateAddedSec = i.toLong())
+        }
+        val store = FakeAutoScanStore(enabled = true, cursor = 0L)
+        val scanner = FakeGallerySlipScanner(images = images)
+        val intake = SlowFakeSlipIntake(
+            images.associate { img ->
+                img.uri to FakeOutcome.Success(candidateOutcome("10.00", SlipIntake.Source.Qr))
+            },
+        )
+        val coordinator = AutoScanCoordinator(
+            store = store,
+            scanner = scanner,
+            intake = intake,
+            clock = { scanEpochSec },
+        )
+
+        val job = async { coordinator.resetAndScanAllHistory(hasPhotoPermission = true) }
+        intake.awaitProcessingStarted()
+        coordinator.stopScan()
+        intake.releaseProcessing()
+        job.await()
+
+        assertEquals(ScanProgress.Phase.Done, coordinator.scanProgress.value.phase)
+        assertTrue(coordinator.queue.value.isNotEmpty())
+        val summary = coordinator.consumeAutoSaveSummary()
+        assertTrue(summary!!.needReview >= 1)
+        // Partial batch not committed — cursor still at beginning
+        assertEquals(0L, store.cursor)
+    }
+
     private fun scannedImage(uri: Uri, dateAddedSec: Long = 1_500L) =
         ScannedImage(uri = uri, dateAddedSec = dateAddedSec, bucketId = "bucket")
 
@@ -276,21 +506,37 @@ class AutoScanCoordinatorTest {
         bank: String? = null,
         reference: String? = null,
         rawText: String? = null,
+        spentAtIso: String? = null,
     ) = SlipIntake.Outcome(
-        draft = SlipDraft(amount = amount, bank = bank, reference = reference),
+        draft = SlipDraft(
+            amount = amount,
+            bank = bank,
+            reference = reference,
+            spentAtIso = spentAtIso,
+        ),
         source = source,
         rawText = rawText,
     )
 
+    private class FakePersister(
+        private val results: Map<Uri, AutoSaveItemResult>,
+    ) : SlipAutoPersister {
+        override suspend fun persist(item: QueuedSlip): AutoSaveItemResult =
+            results[item.uri] ?: AutoSaveItemResult.Failed
+    }
+
     private class FakeAutoScanStore(
         private val enabled: Boolean,
         cursor: Long?,
-        private val extraBucketIds: Set<String> = emptySet(),
+        private val extraBucketIds: Set<String> = setOf("bucket"),
+        private val autoSaveEnabled: Boolean = false,
     ) : AutoScanStoreReader {
         var cursor: Long? = cursor
             private set
 
         override suspend fun isEnabled(): Boolean = enabled
+
+        override suspend fun isAutoSaveEnabled(): Boolean = autoSaveEnabled
 
         override suspend fun getLastScanCursorEpochSec(): Long? = cursor
 
@@ -303,6 +549,7 @@ class AutoScanCoordinatorTest {
 
     private class FakeGallerySlipScanner(
         private val images: List<ScannedImage> = emptyList(),
+        private val folderFileCount: Int = images.size,
     ) : GallerySlipScannerReader {
         var listCalled = false
             private set
@@ -319,8 +566,14 @@ class AutoScanCoordinatorTest {
             listCalled = true
             listCallCount++
             lastAfterEpochSec = afterEpochSec
-            return images.take(limit)
+            return images
+                .filter { it.dateAddedSec > afterEpochSec }
+                .sortedBy { it.dateAddedSec }
+                .take(limit)
         }
+
+        override suspend fun countImages(bucketIds: Set<String>): Int =
+            if (bucketIds.isEmpty()) 0 else folderFileCount
     }
 
     private sealed class FakeOutcome {

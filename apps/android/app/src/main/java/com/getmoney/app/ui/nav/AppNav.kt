@@ -1,21 +1,35 @@
 package com.getmoney.app.ui.nav
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -28,8 +42,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -40,10 +57,16 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
+import com.getmoney.app.autoscan.ReviewSlipZipExporter
+import com.getmoney.app.autoscan.ScanProgress
+import com.getmoney.app.ui.components.AppDialog
+import com.getmoney.app.ui.theme.Ink
+import com.getmoney.app.ui.theme.InkMuted
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.cloudinary.CloudUploadStore
 import com.getmoney.app.data.cloudinary.CloudinaryUploader
+import com.getmoney.app.data.identity.MyIdentityStore
 import com.getmoney.app.data.slipimage.SlipImageStore
 import com.getmoney.app.data.tx.TransactionRepository
 import com.getmoney.app.ocr.SlipIntake
@@ -55,17 +78,20 @@ import com.getmoney.app.ui.home.HomeScreen
 import com.getmoney.app.ui.slip.AddSlipScreen
 import com.getmoney.app.ui.summary.SummaryScreen
 import com.getmoney.app.ui.tx.TransactionsScreen
-import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import kotlinx.coroutines.launch
 
-private data class MainTab(val route: String, val label: String)
+private data class MainTab(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+)
 
 private val mainTabs = listOf(
-    MainTab("today", "Today"),
-    MainTab("tx", "Tx"),
-    MainTab("summary", "Summary"),
-    MainTab("budget", "Budget"),
-    MainTab("account", "Account"),
+    MainTab("today", "Today", Icons.Outlined.Today),
+    MainTab("tx", "Tx", Icons.AutoMirrored.Outlined.ReceiptLong),
+    MainTab("summary", "Summary", Icons.Outlined.BarChart),
+    MainTab("budget", "Budget", Icons.Outlined.AccountBalanceWallet),
+    MainTab("account", "Account", Icons.Outlined.Person),
 )
 
 @Composable
@@ -79,6 +105,7 @@ fun AppNav(
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
+    myIdentityStore: MyIdentityStore,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
 ) {
@@ -102,6 +129,7 @@ fun AppNav(
             slipIntake = slipIntake,
             autoScanStore = autoScanStore,
             autoScanCoordinator = autoScanCoordinator,
+            myIdentityStore = myIdentityStore,
             sharedImageUri = sharedImageUri,
             onShareUriConsumed = onShareUriConsumed,
         )
@@ -113,7 +141,7 @@ fun AppNav(
 private fun LoadingScreen() {
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = androidx.compose.ui.Alignment.Center,
+        contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
     }
@@ -154,6 +182,7 @@ private fun MainShell(
     slipIntake: SlipIntake,
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
+    myIdentityStore: MyIdentityStore,
     sharedImageUri: Uri?,
     onShareUriConsumed: () -> Unit,
 ) {
@@ -165,8 +194,11 @@ private fun MainShell(
     val snackbarHostState = remember { SnackbarHostState() }
     val queue by autoScanCoordinator.queue.collectAsState()
     val bannerDismissed by autoScanCoordinator.bannerDismissed.collectAsState()
-    val pendingSlipCount = if (!bannerDismissed) queue.size else 0
+    val scanProgress by autoScanCoordinator.scanProgress.collectAsState()
+    /** Slips waiting for manual review — kept until opened / skipped / saved. */
+    val reviewQueueCount = queue.size
     var pendingAccountScanNow by remember { mutableStateOf(false) }
+    var zipExporting by remember { mutableStateOf(false) }
     val photoPermission = if (Build.VERSION.SDK_INT >= 33) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
@@ -182,17 +214,40 @@ private fun MainShell(
     }
 
     fun dismissPendingSlips() {
+        // Hide the blocking popup only — keep queue so user can open it later from Today.
         autoScanCoordinator.dismissBanner()
-        autoScanCoordinator.clearQueue()
+    }
+
+    fun shareReviewZip() {
+        if (zipExporting) return
+        val slips = autoScanCoordinator.slipsForZipExport()
+        if (slips.isEmpty()) {
+            scope.launch { snackbarHostState.showSnackbar("ไม่มีสลิปที่ต้องส่งออก") }
+            return
+        }
+        zipExporting = true
+        scope.launch {
+            try {
+                val intent = ReviewSlipZipExporter.buildShareIntent(context, slips)
+                if (intent == null) {
+                    snackbarHostState.showSnackbar("สร้าง ZIP ไม่สำเร็จ")
+                } else {
+                    context.startActivity(Intent.createChooser(intent, "ส่งออกสลิปที่ต้องตรวจ"))
+                }
+            } finally {
+                zipExporting = false
+            }
+        }
     }
 
     fun handleScanNowComplete(foundCount: Int) {
-        if (foundCount == 0) {
-            scope.launch {
-                snackbarHostState.showSnackbar("No new slips found")
+        val summary = autoScanCoordinator.consumeAutoSaveSummary()
+        scope.launch {
+            when {
+                summary != null -> snackbarHostState.showSnackbar(summary.snackbarMessage())
+                foundCount == 0 -> snackbarHostState.showSnackbar("ไม่พบสลิปใหม่")
             }
         }
-        // foundCount > 0 → dialog below appears from queue StateFlow
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -207,6 +262,9 @@ private fun MainShell(
                 }
             } else {
                 autoScanCoordinator.runScanIfNeeded(granted)
+                autoScanCoordinator.consumeAutoSaveSummary()?.let { summary ->
+                    snackbarHostState.showSnackbar(summary.snackbarMessage())
+                }
             }
         }
     }
@@ -214,6 +272,9 @@ private fun MainShell(
     LaunchedEffect(Unit) {
         if (hasPhotoPermission) {
             autoScanCoordinator.runScanIfNeeded(true)
+            autoScanCoordinator.consumeAutoSaveSummary()?.let { summary ->
+                snackbarHostState.showSnackbar(summary.snackbarMessage())
+            }
         } else {
             permissionLauncher.launch(photoPermission)
         }
@@ -227,37 +288,37 @@ private fun MainShell(
         }
     }
 
-    val showSlipPopup = pendingSlipCount > 0 && currentRoute != "add_slip"
+    val showSlipPopup = !bannerDismissed && reviewQueueCount > 0 && currentRoute != "add_slip"
 
     if (showSlipPopup) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { /* require explicit choice */ },
-            title = {
-                Text("พบสลิปใหม่ $pendingSlipCount ใบ")
-            },
-            text = {
-                Text("ต้องการตรวจและบันทึกตอนนี้หรือไม่?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = { openSlipQueue() },
-                    shape = MaterialTheme.shapes.small,
-                    colors = CarbonButtonDefaults.primaryButtonColors(),
-                    elevation = CarbonButtonDefaults.primaryButtonElevation(),
-                ) {
-                    Text("ดูเลย")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { dismissPendingSlips() }) {
-                    Text("ภายหลัง")
-                }
-            },
+            title = "มีสลิป $reviewQueueCount ใบที่ต้องตรวจ",
+            icon = Icons.AutoMirrored.Outlined.ReceiptLong,
+            supportingText = "บันทึกอัตโนมัติแล้วบางส่วน — ใบเหล่านี้ยังไม่ครบหรือบันทึกไม่สำเร็จ\nกดภายหลังแล้วกลับมาดูได้ที่หน้า Today\nหรือส่งออก ZIP เพื่อส่งให้ช่วยดูทีเดียว",
+            dismissOnClickOutside = false,
+            dismissOnBackPress = false,
+            primaryLabel = "ดูเลย",
+            onPrimary = { openSlipQueue() },
+            secondaryLabel = if (zipExporting) "กำลังสร้าง ZIP…" else "ส่งออก ZIP",
+            onSecondary = { shareReviewZip() },
+            tertiaryLabel = "ภายหลัง",
+            onTertiary = { dismissPendingSlips() },
         )
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Ink,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionColor = MaterialTheme.colorScheme.primary,
+                    shape = MaterialTheme.shapes.small,
+                )
+            }
+        },
         bottomBar = {
             if (currentRoute != "add_slip") {
                 NavigationBar {
@@ -274,18 +335,93 @@ private fun MainShell(
                                 }
                             },
                             label = { Text(tab.label) },
-                            icon = { Text(tab.label.take(1)) },
+                            icon = {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.label,
+                                )
+                            },
                         )
                     }
                 }
             }
         },
     ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = "today",
-            modifier = Modifier.padding(padding),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
         ) {
+            val showProgress = scanProgress.phase != ScanProgress.Phase.Idle
+            if (showProgress) {
+                val progressDenom = when {
+                    scanProgress.overallTotal > 0 -> scanProgress.overallTotal
+                    scanProgress.total > 0 -> scanProgress.total
+                    else -> 0
+                }
+                val progressNumer = when {
+                    scanProgress.overallTotal > 0 -> scanProgress.overallCurrent
+                    else -> scanProgress.current
+                }
+                val isPaused = scanProgress.phase == ScanProgress.Phase.Paused
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (scanProgress.isActive && !isPaused) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                        Text(
+                            text = scanProgress.statusLine(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (progressDenom > 0 && scanProgress.isActive) {
+                        LinearProgressIndicator(
+                            progress = {
+                                (progressNumer.toFloat() / progressDenom.toFloat())
+                                    .coerceIn(0f, 1f)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (scanProgress.isActive) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            if (isPaused) {
+                                TextButton(onClick = { autoScanCoordinator.resumeScan() }) {
+                                    Text("ต่อ")
+                                }
+                            } else {
+                                TextButton(onClick = { autoScanCoordinator.pauseScan() }) {
+                                    Text("พัก")
+                                }
+                            }
+                            TextButton(onClick = { autoScanCoordinator.stopScan() }) {
+                                Text("หยุด")
+                            }
+                        }
+                    }
+                }
+            }
+            NavHost(
+                navController = navController,
+                startDestination = "today",
+                modifier = Modifier.weight(1f),
+            ) {
             composable("today") {
                 HomeScreen(
                     budgetRepository = budgetRepository,
@@ -310,9 +446,10 @@ private fun MainShell(
                             restoreState = true
                         }
                     },
-                    pendingSlipCount = pendingSlipCount,
+                    pendingSlipCount = reviewQueueCount,
                     onReviewPendingSlips = { openSlipQueue() },
-                    onDismissPendingBanner = { dismissPendingSlips() },
+                    onExportReviewZip = { shareReviewZip() },
+                    zipExporting = zipExporting,
                 )
             }
             composable("tx") {
@@ -361,13 +498,17 @@ private fun MainShell(
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,
                     cloudUploadStore = cloudUploadStore,
+                    myIdentityStore = myIdentityStore,
                     hasPhotoPermission = hasPhotoPermission,
                     onRequestPhotoPermission = {
                         pendingAccountScanNow = true
                         permissionLauncher.launch(photoPermission)
                     },
                     onScanNowComplete = ::handleScanNowComplete,
+                    onExportReviewZip = { shareReviewZip() },
+                    zipExporting = zipExporting,
                 )
+            }
             }
         }
     }

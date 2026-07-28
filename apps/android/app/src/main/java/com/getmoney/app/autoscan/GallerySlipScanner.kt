@@ -14,15 +14,18 @@ class GallerySlipScanner(context: Context) : GallerySlipScannerReader {
         extraBucketIds: Set<String>,
         limit: Int,
     ): List<ScannedImage> = withContext(Dispatchers.IO) {
-        // Wide-first: extraBucketIds are persisted for Settings; query stays wide.
+        if (extraBucketIds.isEmpty() || limit <= 0) return@withContext emptyList()
 
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DATE_ADDED,
             MediaStore.Images.Media.BUCKET_ID,
         )
-        val selection = "${MediaStore.Images.Media.DATE_ADDED} > ?"
-        val selectionArgs = arrayOf(afterEpochSec.toString())
+        val placeholders = extraBucketIds.joinToString(",") { "?" }
+        val selection =
+            "${MediaStore.Images.Media.DATE_ADDED} > ? AND " +
+                "${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)"
+        val selectionArgs = arrayOf(afterEpochSec.toString()) + extraBucketIds.map { it }.toTypedArray()
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} ASC"
 
         val results = mutableListOf<ScannedImage>()
@@ -55,6 +58,20 @@ class GallerySlipScanner(context: Context) : GallerySlipScannerReader {
             }
         }
         results
+    }
+
+    override suspend fun countImages(bucketIds: Set<String>): Int = withContext(Dispatchers.IO) {
+        if (bucketIds.isEmpty()) return@withContext 0
+        val placeholders = bucketIds.joinToString(",") { "?" }
+        val selection = "${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)"
+        val selectionArgs = bucketIds.toTypedArray()
+        contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID),
+            selection,
+            selectionArgs,
+            null,
+        )?.use { cursor -> cursor.count } ?: 0
     }
 
     suspend fun listBuckets(): List<Pair<String, String>> = withContext(Dispatchers.IO) {

@@ -60,13 +60,55 @@ class SlipParserTest {
     }
 
     @Test
-    fun doesNotTreatBareLargestIntegerAsAmount() {
+    fun extractsSplitThaiDateAndTimeLines() {
         val raw = """
-            Transaction ID 998877665544
-            Paid Amount 89.00 Baht
+            โอนเงินสำเร็จ
+            7 มิ.ย. 69
+            07:03 น.
+            นาย ทดสอบ
+            จำนวน 200 บาท
         """.trimIndent()
         val draft = SlipParser.parse(raw)
-        assertEquals("89.00", draft.amount)
+        assertEquals("2026-06-07T07:03:00+07:00", draft.spentAtIso)
+        assertEquals("200.00", draft.amount)
+    }
+
+    @Test
+    fun doesNotPreferBuddhistYearOrTimeOverAmount() {
+        // OCR often keeps date "… 69 16:07" while amount is on its own lines.
+        // Without date/time exclusion, 69 can win when amount cues are weak.
+        val raw = """
+            โอนเงินสำเร็จ
+            K+
+            16 ก.ค. 69 16:07 น.
+            นาย ทดสอบ ใจดี
+            ธ.กสิกรไทย
+            Xxx-x-x3523-x
+            น.ส. ผู้รับ เงิน
+            ธ.กสิกรไทย
+            Xxx-x-x5079-x
+            เลขที่รายการ: 016152010501BPM17567
+            จำนวน
+            200
+            บาท
+            ค่าธรรมเนียม
+            0.00
+            บาท
+        """.trimIndent()
+        val draft = SlipParser.parse(raw)
+        assertEquals("200.00", draft.amount)
+    }
+
+    @Test
+    fun dateLineAloneDoesNotBecomeAmount() {
+        val raw = """
+            โอนเงินสำเร็จ
+            16 ก.ค. 69 16:07 น.
+            ธ.กสิกรไทย
+            เลขที่รายการ: ABC123456789
+        """.trimIndent()
+        val draft = SlipParser.parse(raw)
+        assertEquals("0", draft.amount)
     }
 
     @Test
@@ -85,5 +127,51 @@ class SlipParserTest {
             Amount 50.00 THB
         """.trimIndent()
         assertEquals("Krungsri", SlipParser.parse(raw).bank)
+    }
+
+    @Test
+    fun extractsOutgoingDirectionAndParties() {
+        val raw = """
+            โอนเงินสำเร็จ
+            จาก: สมชาย ใจดี
+            ถึง: สมหญิง รักดี
+            จำนวนเงิน 500.00 บาท
+            กสิกรไทย
+        """.trimIndent()
+        val draft = SlipParser.parse(raw)
+        assertEquals(TransferDirection.OUT, draft.direction)
+        assertEquals("สมชาย ใจดี", draft.fromName)
+        assertEquals("สมหญิง รักดี", draft.toName)
+        assertEquals("โอนออก · จาก: สมชาย ใจดี → ถึง: สมหญิง รักดี", draft.note)
+    }
+
+    @Test
+    fun extractsIncomingDirection() {
+        val raw = """
+            รับเงินสำเร็จ
+            จาก: นายเอ
+            ถึง: นายบี
+            จำนวนเงิน 100.00 บาท
+        """.trimIndent()
+        val draft = SlipParser.parse(raw)
+        assertEquals(TransferDirection.IN, draft.direction)
+        assertEquals("นายเอ", draft.fromName)
+        assertEquals("นายบี", draft.toName)
+        assertEquals("รับเข้า · จาก: นายเอ → ถึง: นายบี", draft.note)
+    }
+
+    @Test
+    fun extractsLabeledMemoIntoNote() {
+        val raw = """
+            โอนเงินสำเร็จ
+            จาก: A
+            ถึง: B
+            บันทึก: ค่าข้าวเที่ยง
+            จำนวนเงิน 80.00 บาท
+        """.trimIndent()
+        val draft = SlipParser.parse(raw)
+        assertEquals("ค่าข้าวเที่ยง", draft.note)
+        assertEquals("A", draft.fromName)
+        assertEquals("B", draft.toName)
     }
 }

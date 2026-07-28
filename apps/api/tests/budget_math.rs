@@ -11,9 +11,10 @@ fn july_31_days_daily_allowance() {
 
     assert_eq!(figures.days_in_month, 31);
     assert_eq!(figures.remaining, Decimal::from_str("6163.83").unwrap());
+    // 6163.83 / 31 = 198.833... → rounded to 2 dp
     assert_eq!(
         figures.daily_allowance,
-        figures.remaining / Decimal::from(31)
+        Decimal::from_str("198.83").unwrap()
     );
 }
 

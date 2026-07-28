@@ -30,11 +30,15 @@ pub fn compute_budget(
     month: u32,
 ) -> BudgetFigures {
     let days = days_in_month(year, month);
-    let remaining = salary - fixed_total;
-    let daily_allowance = remaining / Decimal::from(days);
+    let remaining = (salary - fixed_total).round_dp(2);
+    let daily_allowance = if days == 0 {
+        Decimal::ZERO
+    } else {
+        (remaining / Decimal::from(days)).round_dp(2)
+    };
 
     BudgetFigures {
-        fixed_total,
+        fixed_total: fixed_total.round_dp(2),
         remaining,
         daily_allowance,
         days_in_month: days,

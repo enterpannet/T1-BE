@@ -5,7 +5,10 @@ import com.getmoney.app.data.api.CreateTransactionRequest
 import com.getmoney.app.data.api.PatchTransactionRequest
 import com.getmoney.app.data.api.TransactionApi
 import com.getmoney.app.data.api.TransactionResponse
+import com.getmoney.app.data.slipimage.SlipImageStore
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -15,6 +18,7 @@ class DuplicateSlipException : Exception("บันทึกไปแล้ว")
 
 class TransactionRepository(
     private val transactionApi: TransactionApi,
+    private val slipImageStore: SlipImageStore,
 ) {
     suspend fun createSlipTransaction(
         amount: String,
@@ -100,6 +104,9 @@ class TransactionRepository(
     suspend fun deleteTransaction(transactionId: String): Result<Unit> =
         try {
             transactionApi.delete(transactionId)
+            withContext(Dispatchers.IO) {
+                slipImageStore.delete(transactionId)
+            }
             Result.success(Unit)
         } catch (error: HttpException) {
             Result.failure(Exception(parseErrorMessage(error)))
@@ -116,11 +123,18 @@ class TransactionRepository(
         note: String?,
     ): Result<TransactionResponse> =
         try {
+            val spentAt = when {
+                !spentAtIso.isNullOrBlank() -> spentAtIso.trim()
+                source == "manual" -> nowBangkokIso()
+                else -> return Result.failure(
+                    Exception("ต้องมีวันเวลาที่โอน/รับจริงจากสลิป"),
+                )
+            }
             Result.success(
                 transactionApi.create(
                     CreateTransactionRequest(
                         amount = amount,
-                        spentAt = spentAtIso ?: nowBangkokIso(),
+                        spentAt = spentAt,
                         source = source,
                         bank = bank?.takeIf { it.isNotBlank() },
                         note = note?.takeIf { it.isNotBlank() },
