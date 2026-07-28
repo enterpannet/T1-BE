@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.getmoney.app.data.api.ApiClient
+import com.getmoney.app.data.api.AppUpdateApi
 import com.getmoney.app.data.api.BudgetApi
 import com.getmoney.app.data.api.SummaryApi
 import com.getmoney.app.data.api.TransactionApi
@@ -71,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 slipImageStore = slipImageStore,
             ),
         )
+        val appUpdateApi = apiClient.createService(AppUpdateApi::class.java)
 
         setContent {
             GetMoneyTheme {
@@ -85,6 +87,7 @@ class MainActivity : ComponentActivity() {
                     autoScanStore = autoScanStore,
                     autoScanCoordinator = autoScanCoordinator,
                     myIdentityStore = myIdentityStore,
+                    appUpdateApi = appUpdateApi,
                     sharedImageUri = sharedImageUri,
                     onShareUriConsumed = { sharedImageUri = null },
                 )

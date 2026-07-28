@@ -1,3 +1,4 @@
+pub mod app_release;
 pub mod auth;
 pub mod budget;
 pub mod config;
@@ -20,6 +21,7 @@ pub fn app(state: AppState) -> Router {
             "/health",
             get(|| async { axum::Json(serde_json::json!({"status":"ok"})) }),
         )
+        .route("/app/version", get(app_release::get_version))
         .route("/auth/register", post(auth::handlers::register))
         .route("/auth/login", post(auth::handlers::login))
         .route("/auth/refresh", post(auth::handlers::refresh))

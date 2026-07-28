@@ -111,3 +111,11 @@ data class MonthSummaryResponse(
     @SerializedName("spent_variable") val spentVariable: String,
     @SerializedName("percent_of_remaining") val percentOfRemaining: String,
 )
+
+data class AppVersionResponse(
+    @SerializedName("version_code") val versionCode: Int,
+    @SerializedName("version_name") val versionName: String,
+    @SerializedName("force") val force: Boolean = false,
+    @SerializedName("apk_url") val apkUrl: String,
+    @SerializedName("notes") val notes: String = "",
+)

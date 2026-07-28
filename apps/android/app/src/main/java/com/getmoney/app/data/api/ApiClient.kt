@@ -100,6 +100,11 @@ interface SummaryApi {
     suspend fun month(@Path("month") month: String): MonthSummaryResponse
 }
 
+interface AppUpdateApi {
+    @GET("app/version")
+    suspend fun version(): AppVersionResponse
+}
+
 class ApiClient(tokenStore: TokenStore) {
     private val gson = Gson()
 

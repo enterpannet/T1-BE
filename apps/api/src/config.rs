@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -5,6 +7,8 @@ pub struct Config {
     pub access_token_ttl_secs: i64,
     pub refresh_token_ttl_secs: i64,
     pub bind_addr: String,
+    /// Path to `latest.json` for in-app updates. Unset → `/app/version` returns 404.
+    pub app_release_manifest: Option<PathBuf>,
 }
 
 impl Config {
@@ -22,6 +26,10 @@ impl Config {
                 .parse()
                 .expect("REFRESH_TOKEN_TTL_SECS"),
             bind_addr: std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
+            app_release_manifest: std::env::var("APP_RELEASE_MANIFEST")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .map(PathBuf::from),
         }
     }
 }

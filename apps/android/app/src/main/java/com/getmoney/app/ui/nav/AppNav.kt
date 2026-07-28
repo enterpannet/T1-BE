@@ -59,9 +59,8 @@ import com.getmoney.app.autoscan.AutoScanCoordinator
 import com.getmoney.app.autoscan.AutoScanStore
 import com.getmoney.app.autoscan.ReviewSlipZipExporter
 import com.getmoney.app.autoscan.ScanProgress
-import com.getmoney.app.ui.components.AppDialog
-import com.getmoney.app.ui.theme.Ink
-import com.getmoney.app.ui.theme.InkMuted
+import com.getmoney.app.data.api.AppUpdateApi
+import com.getmoney.app.data.api.AppVersionResponse
 import com.getmoney.app.data.auth.AuthRepository
 import com.getmoney.app.data.budget.BudgetRepository
 import com.getmoney.app.data.cloudinary.CloudUploadStore
@@ -74,11 +73,20 @@ import com.getmoney.app.ui.account.AccountScreen
 import com.getmoney.app.ui.auth.LoginScreen
 import com.getmoney.app.ui.auth.RegisterScreen
 import com.getmoney.app.ui.budget.BudgetScreen
+import com.getmoney.app.ui.components.AppDialog
 import com.getmoney.app.ui.home.HomeScreen
 import com.getmoney.app.ui.slip.AddSlipScreen
 import com.getmoney.app.ui.summary.SummaryScreen
+import com.getmoney.app.ui.theme.Ink
+import com.getmoney.app.ui.theme.InkMuted
 import com.getmoney.app.ui.tx.TransactionsScreen
+import com.getmoney.app.update.AppUpdate
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.mutableFloatStateOf
 
 private data class MainTab(
     val route: String,
@@ -106,6 +114,7 @@ fun AppNav(
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
     myIdentityStore: MyIdentityStore,
+    appUpdateApi: AppUpdateApi,
     sharedImageUri: Uri? = null,
     onShareUriConsumed: () -> Unit = {},
 ) {
@@ -130,6 +139,7 @@ fun AppNav(
             autoScanStore = autoScanStore,
             autoScanCoordinator = autoScanCoordinator,
             myIdentityStore = myIdentityStore,
+            appUpdateApi = appUpdateApi,
             sharedImageUri = sharedImageUri,
             onShareUriConsumed = onShareUriConsumed,
         )
@@ -183,6 +193,7 @@ private fun MainShell(
     autoScanStore: AutoScanStore,
     autoScanCoordinator: AutoScanCoordinator,
     myIdentityStore: MyIdentityStore,
+    appUpdateApi: AppUpdateApi,
     sharedImageUri: Uri?,
     onShareUriConsumed: () -> Unit,
 ) {
@@ -199,6 +210,10 @@ private fun MainShell(
     val reviewQueueCount = queue.size
     var pendingAccountScanNow by remember { mutableStateOf(false) }
     var zipExporting by remember { mutableStateOf(false) }
+    var pendingUpdate by remember { mutableStateOf<AppVersionResponse?>(null) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableFloatStateOf(-1f) }
+    var updateError by remember { mutableStateOf<String?>(null) }
     val photoPermission = if (Build.VERSION.SDK_INT >= 33) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
@@ -280,6 +295,10 @@ private fun MainShell(
         }
     }
 
+    LaunchedEffect(Unit) {
+        pendingUpdate = AppUpdate.fetchIfNewer(appUpdateApi)
+    }
+
     LaunchedEffect(sharedImageUri) {
         if (sharedImageUri != null) {
             navController.navigate("add_slip") {
@@ -288,7 +307,81 @@ private fun MainShell(
         }
     }
 
-    val showSlipPopup = !bannerDismissed && reviewQueueCount > 0 && currentRoute != "add_slip"
+    val showSlipPopup = pendingUpdate == null &&
+        !bannerDismissed &&
+        reviewQueueCount > 0 &&
+        currentRoute != "add_slip"
+
+    pendingUpdate?.let { remote ->
+        val notes = remote.notes.trim().ifEmpty { "แนะนำให้อัปเดตเพื่อความถูกต้องของสลิปและฟีเจอร์ใหม่" }
+        AppDialog(
+            onDismissRequest = {
+                if (!remote.force && !updateDownloading) pendingUpdate = null
+            },
+            title = "มีเวอร์ชันใหม่ ${remote.versionName}",
+            supportingText = buildString {
+                append(notes)
+                if (updateError != null) {
+                    append("\n\n")
+                    append(updateError)
+                }
+            },
+            dismissOnClickOutside = !remote.force && !updateDownloading,
+            dismissOnBackPress = !remote.force && !updateDownloading,
+            primaryLabel = when {
+                updateDownloading && updateProgress >= 0f ->
+                    "กำลังดาวน์โหลด ${(updateProgress * 100).toInt()}%"
+                updateDownloading -> "กำลังดาวน์โหลด…"
+                else -> "อัปเดต"
+            },
+            onPrimary = {
+                if (updateDownloading) return@AppDialog
+                if (!AppUpdate.canRequestInstall(context)) {
+                    context.startActivity(AppUpdate.installPermissionSettingsIntent(context))
+                    updateError = "เปิดอนุญาต “ติดตั้งแอปที่ไม่รู้จัก” แล้วกดอัปเดตอีกครั้ง"
+                    return@AppDialog
+                }
+                updateDownloading = true
+                updateError = null
+                updateProgress = -1f
+                scope.launch {
+                    try {
+                        val file = withContext(Dispatchers.IO) {
+                            AppUpdate.downloadApk(context, remote.apkUrl) { p ->
+                                scope.launch(Dispatchers.Main.immediate) {
+                                    updateProgress = p ?: -1f
+                                }
+                            }
+                        }
+                        AppUpdate.installApk(context, file)
+                        if (!remote.force) pendingUpdate = null
+                    } catch (e: Exception) {
+                        updateError = e.message ?: "ดาวน์โหลดไม่สำเร็จ"
+                    } finally {
+                        updateDownloading = false
+                    }
+                }
+            },
+            primaryEnabled = !updateDownloading,
+            secondaryLabel = if (remote.force || updateDownloading) null else "ภายหลัง",
+            onSecondary = if (remote.force || updateDownloading) {
+                null
+            } else {
+                { pendingUpdate = null }
+            },
+            content = if (updateDownloading && updateProgress >= 0f) {
+                {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { updateProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                null
+            },
+        )
+    }
 
     if (showSlipPopup) {
         AppDialog(
