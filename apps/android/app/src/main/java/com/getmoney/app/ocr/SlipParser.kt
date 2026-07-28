@@ -1339,33 +1339,48 @@ object SlipParser {
     )
 
     private fun extractSpentAtFromKbankTxnId(text: String): String? {
-        val normalized = text.replace(Regex("""(?i)(?<![0-9A-Za-z])O(?=16\d)"""), "0")
-        val match = kbankTxnIdPattern.find(normalized) ?: return null
-        val doy = match.groupValues[1].toIntOrNull() ?: return null
-        val hhmmss = match.groupValues[2]
-        if (doy !in 1..366 || hhmmss.length != 6) return null
-        val hour = hhmmss.substring(0, 2).toIntOrNull() ?: return null
-        val minute = hhmmss.substring(2, 4).toIntOrNull() ?: return null
-        val second = hhmmss.substring(4, 6).toIntOrNull() ?: return null
-        if (hour !in 0..23 || minute !in 0..59 || second !in 0..59) return null
-        val year = inferGregorianYearForSlip(text)
-        val date = try {
-            LocalDate.ofYearDay(year, doy)
-        } catch (_: DateTimeException) {
-            try {
-                LocalDate.ofYearDay(year - 1, doy)
+        // OCR frequently turns digits into O/I/l/| inside เลขที่รายการ.
+        val candidates = Regex(
+            """(?i)(?<![0-9A-Z])[O0]?16[0-9OIl|]{8,}[A-Z0-9OIl|]*""",
+        ).findAll(text)
+        for (candidate in candidates) {
+            val cleaned = candidate.value
+                .map { ch ->
+                    when (ch) {
+                        'O', 'o' -> '0'
+                        'I', 'l', '|' -> '1'
+                        else -> ch
+                    }
+                }
+                .joinToString("")
+            val match = kbankTxnIdPattern.find(cleaned) ?: continue
+            val doy = match.groupValues[1].toIntOrNull() ?: continue
+            val hhmmss = match.groupValues[2]
+            if (doy !in 1..366 || hhmmss.length != 6) continue
+            val hour = hhmmss.substring(0, 2).toIntOrNull() ?: continue
+            val minute = hhmmss.substring(2, 4).toIntOrNull() ?: continue
+            val second = hhmmss.substring(4, 6).toIntOrNull() ?: continue
+            if (hour !in 0..23 || minute !in 0..59 || second !in 0..59) continue
+            val year = inferGregorianYearForSlip(text)
+            val date = try {
+                LocalDate.ofYearDay(year, doy)
             } catch (_: DateTimeException) {
-                return null
+                try {
+                    LocalDate.ofYearDay(year - 1, doy)
+                } catch (_: DateTimeException) {
+                    continue
+                }
             }
+            return "%04d-%02d-%02dT%02d:%02d:%02d+07:00".format(
+                date.year,
+                date.monthValue,
+                date.dayOfMonth,
+                hour,
+                minute,
+                second,
+            )
         }
-        return "%04d-%02d-%02dT%02d:%02d:%02d+07:00".format(
-            date.year,
-            date.monthValue,
-            date.dayOfMonth,
-            hour,
-            minute,
-            second,
-        )
+        return null
     }
 
     private fun extractSpentAtFromLooseDayYearTime(text: String): String? {

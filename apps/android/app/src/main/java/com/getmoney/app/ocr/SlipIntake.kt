@@ -33,7 +33,7 @@ class SlipIntake(
             val parsed = EmvQrParser.parse(payload) ?: continue
             val qrDraft = EmvQrParser.toSlipDraft(parsed) ?: continue
             val doc = runCatching { ocr.recognizeDocument(uri) }.getOrNull()
-            val ocrDraft = doc?.let { SlipParser.parse(it) }
+            val ocrDraft = doc?.let { SlipParser.parse(withUriNameHint(it, uri)) }
             val merged = enrichSlipDraftFromOcr(qrDraft, ocrDraft)
             return Outcome(
                 draft = MyIdentityDirection.applyToDraft(merged, identity),
@@ -48,7 +48,7 @@ class SlipIntake(
         }
 
         val doc = ocr.recognizeDocument(uri)
-        val draft = SlipParser.parse(doc).let { parsed ->
+        val draft = SlipParser.parse(withUriNameHint(doc, uri)).let { parsed ->
             val withRef = if (parsed.reference.isNullOrBlank() && !qrRef.isNullOrBlank()) {
                 parsed.copy(reference = qrRef)
             } else {
@@ -58,6 +58,27 @@ class SlipIntake(
         }
         return Outcome(draft = draft, source = Source.Ocr, rawText = doc.text)
     }
+}
+
+/** Gallery filenames often embed K+ txn ids (016…) even when OCR garbles the slip. */
+internal fun withUriNameHint(doc: OcrDocument, uri: Uri): OcrDocument {
+    val raw = uri.lastPathSegment ?: return doc
+    val name = runCatching {
+        java.net.URLDecoder.decode(raw, Charsets.UTF_8.name())
+    }.getOrDefault(raw)
+    return withFileNameHint(doc, name)
+}
+
+internal fun withFileNameHint(doc: OcrDocument, fileName: String): OcrDocument {
+    val stem = fileName.substringAfterLast('/').substringBeforeLast('.')
+    if (stem.length < 8) return doc
+    if (!Regex("""(?i)016|KSA|25\d{2}|ก\.ค|มิ\.ย|U\.J|n\.A""").containsMatchIn(stem) &&
+        !Regex("""\d{10,}""").containsMatchIn(stem)
+    ) {
+        return doc
+    }
+    if (doc.text.contains(stem)) return doc
+    return doc.copy(text = doc.text + "\n" + stem)
 }
 
 /** Fill blank QR fields from OCR parse (bank / datetime / reference / parties / note). */

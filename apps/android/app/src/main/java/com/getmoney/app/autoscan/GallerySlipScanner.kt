@@ -74,6 +74,25 @@ class GallerySlipScanner(context: Context) : GallerySlipScannerReader {
         )?.use { cursor -> cursor.count } ?: 0
     }
 
+    override suspend fun countImagesAfter(
+        bucketIds: Set<String>,
+        afterEpochSec: Long,
+    ): Int = withContext(Dispatchers.IO) {
+        if (bucketIds.isEmpty()) return@withContext 0
+        val placeholders = bucketIds.joinToString(",") { "?" }
+        val selection =
+            "${MediaStore.Images.Media.DATE_ADDED} > ? AND " +
+                "${MediaStore.Images.Media.BUCKET_ID} IN ($placeholders)"
+        val selectionArgs = arrayOf(afterEpochSec.toString()) + bucketIds.toTypedArray()
+        contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID),
+            selection,
+            selectionArgs,
+            null,
+        )?.use { cursor -> cursor.count } ?: 0
+    }
+
     suspend fun listBuckets(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         val projection = arrayOf(
             MediaStore.Images.Media.BUCKET_ID,

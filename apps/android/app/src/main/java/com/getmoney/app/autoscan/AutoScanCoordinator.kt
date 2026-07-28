@@ -30,6 +30,9 @@ interface GallerySlipScannerReader {
 
     /** Total image files in the given MediaStore buckets (no date filter). */
     suspend fun countImages(bucketIds: Set<String>): Int
+
+    /** Image files in buckets with DATE_ADDED after [afterEpochSec]. */
+    suspend fun countImagesAfter(bucketIds: Set<String>, afterEpochSec: Long): Int
 }
 
 fun interface SlipIntakeReader {
@@ -69,24 +72,14 @@ class AutoScanCoordinator(
         if (!store.isEnabled() || !hasPhotoPermission) return
         if (scannedThisSession) return
 
-        val now = clock()
-        if (store.getLastScanCursorEpochSec() == null) {
-            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor())
-        }
-
-        performSingleBatchScan(now)
+        performContinuousScan(clock(), fullHistory = false)
         scannedThisSession = true
     }
 
     suspend fun runScanNow(hasPhotoPermission: Boolean) {
         if (!store.isEnabled() || !hasPhotoPermission) return
 
-        val now = clock()
-        if (store.getLastScanCursorEpochSec() == null) {
-            store.setLastScanCursorEpochSec(AutoScanCursor.initialCursor())
-        }
-
-        performSingleBatchScan(now)
+        performContinuousScan(clock(), fullHistory = false)
         scannedThisSession = true
     }
 
@@ -94,8 +87,16 @@ class AutoScanCoordinator(
     suspend fun resetAndScanAllHistory(hasPhotoPermission: Boolean) {
         if (!store.isEnabled() || !hasPhotoPermission) return
         store.setLastScanCursorEpochSec(AutoScanCursor.BEGINNING_OF_HISTORY)
-        performFullHistoryScan(clock())
+        performContinuousScan(clock(), fullHistory = true)
         scannedThisSession = true
+    }
+
+    private suspend fun ensureDefaultCursorFloor(now: Long) {
+        val floor = AutoScanCursor.lookbackFloorEpochSec(now)
+        val stored = store.getLastScanCursorEpochSec()
+        if (stored == null || stored < floor) {
+            store.setLastScanCursorEpochSec(AutoScanCursor.effectiveCursor(stored, now))
+        }
     }
 
     fun pauseScan() {
@@ -158,7 +159,7 @@ class AutoScanCoordinator(
         _lastAutoSaveSummary.value = null
     }
 
-    private suspend fun performSingleBatchScan(now: Long) {
+    private suspend fun performContinuousScan(now: Long, fullHistory: Boolean) {
         beginScanRun()
         val generation = scanGeneration.get()
         val buckets = store.getExtraBucketIds()
@@ -168,48 +169,16 @@ class AutoScanCoordinator(
             _scanProgress.value = ScanProgress()
             return
         }
-        val folderFileCount = scanner.countImages(buckets)
-        publishProgress(ScanProgress(phase = ScanProgress.Phase.Listing, overallTotal = 0))
-        val cursor = store.getLastScanCursorEpochSec() ?: return
-        val images = scanner.listNewImages(
-            afterEpochSec = cursor,
-            extraBucketIds = buckets,
-            limit = AutoScanCursor.BATCH_LIMIT,
-        )
-        val totals = AccTotals(folderFileCount = folderFileCount)
-        val reviewAcc = mutableListOf<QueuedSlip>()
-        val outcome = processBatch(
-            images = images,
-            generation = generation,
-            scanStartedAt = now,
-            advanceCursorOnComplete = true,
-            overallBase = 0,
-            overallTotal = 0,
-            totals = totals,
-            reviewAcc = reviewAcc,
-        )
-        when (outcome) {
-            BatchOutcome.Cancelled -> {
-                _scanProgress.value = ScanProgress()
-            }
-            BatchOutcome.Stopped, BatchOutcome.Completed -> {
-                finishRun(totals, reviewAcc, replaceQueue = true)
-            }
-        }
-    }
-
-    private suspend fun performFullHistoryScan(now: Long) {
-        beginScanRun()
-        val generation = scanGeneration.get()
-        val buckets = store.getExtraBucketIds()
-        if (buckets.isEmpty()) {
-            if (scanGeneration.get() != generation) return
-            _queue.value = emptyList()
-            _scanProgress.value = ScanProgress()
-            return
+        if (!fullHistory) {
+            ensureDefaultCursorFloor(now)
         }
         val folderFileCount = scanner.countImages(buckets)
-        val overallTotal = folderFileCount
+        val cursorForCount = store.getLastScanCursorEpochSec() ?: AutoScanCursor.BEGINNING_OF_HISTORY
+        val overallTotal = if (fullHistory) {
+            folderFileCount
+        } else {
+            scanner.countImagesAfter(buckets, cursorForCount)
+        }
         val totals = AccTotals(folderFileCount = folderFileCount)
         val reviewAcc = mutableListOf<QueuedSlip>()
         var overallBase = 0

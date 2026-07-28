@@ -25,19 +25,21 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,9 +63,11 @@ import com.getmoney.app.data.identity.MyIdentityStore
 import com.getmoney.app.ui.components.IconText
 import com.getmoney.app.ui.theme.CarbonButtonDefaults
 import com.getmoney.app.ui.theme.InkMuted
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
+private val accountTabs = listOf("ตัวตน", "สแกน", "คลาวด์", "เซสชัน")
+
 @Composable
 fun AccountScreen(
     authRepository: AuthRepository,
@@ -89,6 +93,7 @@ fun AccountScreen(
     val reviewQueue by autoScanCoordinator.queue.collectAsState()
     val exportableReview by autoScanCoordinator.exportableReviewSlips.collectAsState()
     val cloudinaryConfigured = CloudinaryConfig.isConfigured
+    var selectedTab by remember { mutableIntStateOf(0) }
     var scanning by remember { mutableStateOf(false) }
     var buckets by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var selectedBucketIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -143,7 +148,6 @@ fun AccountScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Top,
     ) {
@@ -168,494 +172,607 @@ fun AccountScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = InkMuted,
         )
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "ชื่อของฉัน (ต้นทาง)",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "ใส่ชื่อ/บัญชีที่ใช้บนสลิป ระบบจะเทียบกับ จาก–ถึง เพื่อเลือกโอนออกหรือรับเข้า",
-            style = MaterialTheme.typography.bodySmall,
-            color = InkMuted,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(
-            value = myNamesText,
-            onValueChange = {
-                myNamesText = it
-                identitySavedHint = false
-            },
-            label = { Text("ชื่อ (บรรทัดละหนึ่งชื่อ)") },
-            placeholder = { Text("นาย เกียรติศักดิ์ พ") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 4,
-            shape = MaterialTheme.shapes.small,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            ),
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(
-            value = myAccountsText,
-            onValueChange = {
-                myAccountsText = it
-                identitySavedHint = false
-            },
-            label = { Text("บัญชี (บรรทัดละหนึ่งรายการ)") },
-            placeholder = { Text("xxx-x-x3523-x") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 4,
-            shape = MaterialTheme.shapes.small,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            ),
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Button(
-            onClick = {
-                identitySaving = true
-                scope.launch {
-                    myIdentityStore.setIdentity(
-                        MyIdentity.fromTexts(myNamesText, myAccountsText),
-                    )
-                    identitySaving = false
-                    identitySavedHint = true
-                }
-            },
-            enabled = !identitySaving,
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.small,
-            colors = CarbonButtonDefaults.primaryButtonColors(),
-            elevation = CarbonButtonDefaults.primaryButtonElevation(),
-        ) {
-            Text(if (identitySaving) "กำลังบันทึก…" else if (identitySavedHint) "บันทึกแล้ว" else "บันทึกชื่อของฉัน")
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-        HorizontalDivider(color = InkMuted.copy(alpha = 0.2f))
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Text(
-            text = "Auto slip scan",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Auto-scan",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = "Scan gallery history in batches when you open the app.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkMuted,
+        TabRow(selectedTabIndex = selectedTab) {
+            accountTabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedTab == index,
+                    onClick = { selectedTab = index },
+                    text = { Text(title) },
                 )
             }
-            Switch(
-                checked = autoScanEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoScanStore.setEnabled(enabled) }
-                },
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Auto-save",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = "บันทึกทันทีหลังสแกน ไม่ต้องยืนยันทีละใบ (ซ้ำถ้าเลขที่รายการตรงกัน)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkMuted,
-                )
-            }
-            Switch(
-                checked = autoSaveEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoScanStore.setAutoSaveEnabled(enabled) }
-                },
-            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "โฟลเดอร์ที่สแกน",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "สแกนเฉพาะโฟลเดอร์ที่เลือกเท่านั้น ต้องเลือกอย่างน้อย 1 โฟลเดอร์",
-            style = MaterialTheme.typography.bodySmall,
-            color = InkMuted,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        when {
-            !hasPhotoPermission -> {
-                Text(
-                    text = "Grant photo access to choose folders.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = InkMuted,
-                )
-            }
-            bucketsLoading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            buckets.isEmpty() -> {
-                Text(
-                    text = "No folders found.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = InkMuted,
-                )
-            }
-            else -> {
-                Text(
-                    text = "เลือกแล้ว (${selectedBuckets.size})",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                if (selectedBuckets.isEmpty()) {
-                    Text(
-                        text = "ยังไม่ได้เลือก — จะยังไม่สแกน",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = InkMuted,
-                    )
-                } else {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        selectedBuckets.forEach { (bucketId, displayName) ->
-                            FilterChip(
-                                selected = true,
-                                onClick = { toggleBucket(bucketId) },
-                                label = { Text(displayName) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = "เลือกแล้ว",
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
-                                ),
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "ในโฟลเดอร์ที่เลือกมี $selectedFolderFileCount ไฟล์",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "ยังไม่เลือก (${unselectedBuckets.size})",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = InkMuted,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                if (unselectedBuckets.isEmpty()) {
-                    Text(
-                        text = "เลือกครบทุกโฟลเดอร์แล้ว",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = InkMuted,
-                    )
-                } else {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        unselectedBuckets.forEach { (bucketId, displayName) ->
-                            FilterChip(
-                                selected = false,
-                                onClick = { toggleBucket(bucketId) },
-                                label = { Text(displayName) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Folder,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    labelColor = MaterialTheme.colorScheme.onSurface,
-                                    iconColor = InkMuted,
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = false,
-                                    borderColor = InkMuted.copy(alpha = 0.45f),
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val canScan = autoScanEnabled && !scanning && !scanProgress.isActive && selectedBucketIds.isNotEmpty()
-
-        Button(
-            onClick = {
-                scope.launch {
-                    if (scanning) return@launch
-                    if (!hasPhotoPermission) {
-                        onRequestPhotoPermission()
-                        return@launch
-                    }
-                    if (selectedBucketIds.isEmpty()) return@launch
-                    scanning = true
-                    try {
-                        autoScanCoordinator.runScanNow(true)
-                        onScanNowComplete(autoScanCoordinator.queue.value.size)
-                    } finally {
-                        scanning = false
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = canScan,
-            shape = MaterialTheme.shapes.small,
-            colors = CarbonButtonDefaults.primaryButtonColors(),
-            elevation = CarbonButtonDefaults.primaryButtonElevation(),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
         ) {
-            if (scanning || scanProgress.isActive) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.height(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                    Text(
-                        text = scanProgress.statusLine().ifBlank { "กำลังสแกน…" },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        maxLines = 2,
-                    )
-                }
-            } else {
-                IconText(
-                    imageVector = Icons.Outlined.QrCodeScanner,
-                    text = "Scan now",
+            when (selectedTab) {
+                0 -> IdentityTab(
+                    myNamesText = myNamesText,
+                    myAccountsText = myAccountsText,
+                    identitySaving = identitySaving,
+                    identitySavedHint = identitySavedHint,
+                    onNamesChange = {
+                        myNamesText = it
+                        identitySavedHint = false
+                    },
+                    onAccountsChange = {
+                        myAccountsText = it
+                        identitySavedHint = false
+                    },
+                    onSave = {
+                        identitySaving = true
+                        scope.launch {
+                            myIdentityStore.setIdentity(
+                                MyIdentity.fromTexts(myNamesText, myAccountsText),
+                            )
+                            identitySaving = false
+                            identitySavedHint = true
+                        }
+                    },
+                )
+                1 -> ScanTab(
+                    scope = scope,
+                    autoScanStore = autoScanStore,
+                    autoScanCoordinator = autoScanCoordinator,
+                    autoScanEnabled = autoScanEnabled,
+                    autoSaveEnabled = autoSaveEnabled,
+                    hasPhotoPermission = hasPhotoPermission,
+                    onRequestPhotoPermission = onRequestPhotoPermission,
+                    bucketsLoading = bucketsLoading,
+                    buckets = buckets,
+                    selectedBuckets = selectedBuckets,
+                    unselectedBuckets = unselectedBuckets,
+                    selectedBucketIds = selectedBucketIds,
+                    selectedFolderFileCount = selectedFolderFileCount,
+                    scanning = scanning,
+                    scanProgress = scanProgress,
+                    reviewQueueSize = reviewQueue.size,
+                    exportableReviewSize = exportableReview.size,
+                    zipExporting = zipExporting,
+                    onToggleBucket = ::toggleBucket,
+                    onScanningChange = { scanning = it },
+                    onScanNowComplete = onScanNowComplete,
+                    onExportReviewZip = onExportReviewZip,
+                )
+                2 -> CloudTab(
+                    cloudUploadEnabled = cloudUploadEnabled,
+                    cloudinaryConfigured = cloudinaryConfigured,
+                    onEnabledChange = { enabled ->
+                        scope.launch { cloudUploadStore.setEnabled(enabled) }
+                    },
+                )
+                else -> SessionTab(
+                    onSignOut = {
+                        scope.launch {
+                            autoScanCoordinator.clearQueue()
+                            authRepository.logout()
+                        }
+                    },
+                    onSignOutEverywhere = {
+                        scope.launch {
+                            autoScanCoordinator.clearQueue()
+                            authRepository.logoutAll()
+                        }
+                    },
                 )
             }
         }
+    }
+}
 
-        if (scanProgress.phase != ScanProgress.Phase.Idle) {
-            Spacer(modifier = Modifier.height(8.dp))
+@Composable
+private fun IdentityTab(
+    myNamesText: String,
+    myAccountsText: String,
+    identitySaving: Boolean,
+    identitySavedHint: Boolean,
+    onNamesChange: (String) -> Unit,
+    onAccountsChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Text(
+        text = "ชื่อของฉัน (ต้นทาง)",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = "ใส่ชื่อ/บัญชีที่ใช้บนสลิป ระบบจะเทียบกับ จาก–ถึง เพื่อเลือกโอนออกหรือรับเข้า",
+        style = MaterialTheme.typography.bodySmall,
+        color = InkMuted,
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    OutlinedTextField(
+        value = myNamesText,
+        onValueChange = onNamesChange,
+        label = { Text("ชื่อ (บรรทัดละหนึ่งชื่อ)") },
+        placeholder = { Text("นาย เกียรติศักดิ์ พ") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 2,
+        maxLines = 4,
+        shape = MaterialTheme.shapes.small,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    OutlinedTextField(
+        value = myAccountsText,
+        onValueChange = onAccountsChange,
+        label = { Text("บัญชี (บรรทัดละหนึ่งรายการ)") },
+        placeholder = { Text("xxx-x-x3523-x") },
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 2,
+        maxLines = 4,
+        shape = MaterialTheme.shapes.small,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    Button(
+        onClick = onSave,
+        enabled = !identitySaving,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        colors = CarbonButtonDefaults.primaryButtonColors(),
+        elevation = CarbonButtonDefaults.primaryButtonElevation(),
+    ) {
+        Text(
+            if (identitySaving) "กำลังบันทึก…"
+            else if (identitySavedHint) "บันทึกแล้ว"
+            else "บันทึกชื่อของฉัน",
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ScanTab(
+    scope: CoroutineScope,
+    autoScanStore: AutoScanStore,
+    autoScanCoordinator: AutoScanCoordinator,
+    autoScanEnabled: Boolean,
+    autoSaveEnabled: Boolean,
+    hasPhotoPermission: Boolean,
+    onRequestPhotoPermission: () -> Unit,
+    bucketsLoading: Boolean,
+    buckets: List<Pair<String, String>>,
+    selectedBuckets: List<Pair<String, String>>,
+    unselectedBuckets: List<Pair<String, String>>,
+    selectedBucketIds: Set<String>,
+    selectedFolderFileCount: Int,
+    scanning: Boolean,
+    scanProgress: ScanProgress,
+    reviewQueueSize: Int,
+    exportableReviewSize: Int,
+    zipExporting: Boolean,
+    onToggleBucket: (String) -> Unit,
+    onScanningChange: (Boolean) -> Unit,
+    onScanNowComplete: (foundCount: Int) -> Unit,
+    onExportReviewZip: () -> Unit,
+) {
+    Text(
+        text = "Auto slip scan",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = scanProgress.statusLine(),
+                text = "Auto-scan",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "Scan gallery history in batches when you open the app.",
                 style = MaterialTheme.typography.bodySmall,
                 color = InkMuted,
             )
-            if (scanProgress.isActive) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (scanProgress.phase == ScanProgress.Phase.Paused) {
-                        TextButton(onClick = { autoScanCoordinator.resumeScan() }) {
-                            Text("ต่อ")
-                        }
-                    } else {
-                        TextButton(onClick = { autoScanCoordinator.pauseScan() }) {
-                            Text("พัก")
-                        }
+        }
+        Switch(
+            checked = autoScanEnabled,
+            onCheckedChange = { enabled ->
+                scope.launch { autoScanStore.setEnabled(enabled) }
+            },
+        )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Auto-save",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "บันทึกทันทีหลังสแกน ไม่ต้องยืนยันทีละใบ (ซ้ำถ้าเลขที่รายการตรงกัน)",
+                style = MaterialTheme.typography.bodySmall,
+                color = InkMuted,
+            )
+        }
+        Switch(
+            checked = autoSaveEnabled,
+            onCheckedChange = { enabled ->
+                scope.launch { autoScanStore.setAutoSaveEnabled(enabled) }
+            },
+        )
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Text(
+        text = "โฟลเดอร์ที่สแกน",
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = "สแกนเฉพาะโฟลเดอร์ที่เลือกเท่านั้น ต้องเลือกอย่างน้อย 1 โฟลเดอร์",
+        style = MaterialTheme.typography.bodySmall,
+        color = InkMuted,
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+
+    when {
+        !hasPhotoPermission -> {
+            Text(
+                text = "Grant photo access to choose folders.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkMuted,
+            )
+        }
+        bucketsLoading -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        buckets.isEmpty() -> {
+            Text(
+                text = "No folders found.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = InkMuted,
+            )
+        }
+        else -> {
+            Text(
+                text = "เลือกแล้ว (${selectedBuckets.size})",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (selectedBuckets.isEmpty()) {
+                Text(
+                    text = "ยังไม่ได้เลือก — จะยังไม่สแกน",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkMuted,
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    selectedBuckets.forEach { (bucketId, displayName) ->
+                        FilterChip(
+                            selected = true,
+                            onClick = { onToggleBucket(bucketId) },
+                            label = { Text(displayName) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = "เลือกแล้ว",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        )
                     }
-                    TextButton(onClick = { autoScanCoordinator.stopScan() }) {
-                        Text("หยุด")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "ในโฟลเดอร์ที่เลือกมี $selectedFolderFileCount ไฟล์",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "ยังไม่เลือก (${unselectedBuckets.size})",
+                style = MaterialTheme.typography.labelLarge,
+                color = InkMuted,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            if (unselectedBuckets.isEmpty()) {
+                Text(
+                    text = "เลือกครบทุกโฟลเดอร์แล้ว",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = InkMuted,
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    unselectedBuckets.forEach { (bucketId, displayName) ->
+                        FilterChip(
+                            selected = false,
+                            onClick = { onToggleBucket(bucketId) },
+                            label = { Text(displayName) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Folder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                iconColor = InkMuted,
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = false,
+                                borderColor = InkMuted.copy(alpha = 0.45f),
+                            ),
+                        )
                     }
                 }
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedButton(
-            onClick = {
-                scope.launch {
-                    if (scanning) return@launch
-                    if (!hasPhotoPermission) {
-                        onRequestPhotoPermission()
-                        return@launch
-                    }
-                    if (selectedBucketIds.isEmpty()) return@launch
-                    scanning = true
-                    try {
-                        autoScanCoordinator.resetAndScanAllHistory(true)
-                        onScanNowComplete(autoScanCoordinator.queue.value.size)
-                    } finally {
-                        scanning = false
-                    }
+    val canScan = autoScanEnabled && !scanning && !scanProgress.isActive && selectedBucketIds.isNotEmpty()
+
+    Button(
+        onClick = {
+            scope.launch {
+                if (scanning) return@launch
+                if (!hasPhotoPermission) {
+                    onRequestPhotoPermission()
+                    return@launch
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = canScan,
-            shape = MaterialTheme.shapes.small,
-        ) {
-            IconText(
-                imageVector = Icons.Outlined.History,
-                text = "สแกนย้อนหลังทั้งหมด",
-            )
+                if (selectedBucketIds.isEmpty()) return@launch
+                onScanningChange(true)
+                try {
+                    autoScanCoordinator.runScanNow(true)
+                    onScanNowComplete(autoScanCoordinator.queue.value.size)
+                } finally {
+                    onScanningChange(false)
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = canScan,
+        shape = MaterialTheme.shapes.small,
+        colors = CarbonButtonDefaults.primaryButtonColors(),
+        elevation = CarbonButtonDefaults.primaryButtonElevation(),
+    ) {
+        if (scanning || scanProgress.isActive) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.height(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Text(
+                    text = scanProgress.statusLine().ifBlank { "กำลังสแกน…" },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    maxLines = 2,
+                )
+            }
+        } else {
+                IconText(
+                    imageVector = Icons.Outlined.QrCodeScanner,
+                    text = "Scan now (7 วัน)",
+                )
+            }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+
+    if (scanProgress.phase != ScanProgress.Phase.Idle) {
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = if (selectedBucketIds.isEmpty()) {
-                "เลือกโฟลเดอร์ก่อน แล้วค่อยสแกน"
-            } else {
-                "ในโฟลเดอร์มี $selectedFolderFileCount ไฟล์ · " +
-                    "สแกนต่อเนื่องทีละชุด (สูงสุด ${AutoScanCursor.BATCH_LIMIT} รูป) จนครบ · " +
-                    "พัก / หยุด ได้ระหว่างทาง"
-            },
+            text = scanProgress.statusLine(),
             style = MaterialTheme.typography.bodySmall,
             color = InkMuted,
         )
-
-        val zipCount = maxOf(reviewQueue.size, exportableReview.size)
-        if (zipCount > 0) {
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onExportReviewZip,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !zipExporting && !scanning,
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    if (zipExporting) "กำลังสร้าง ZIP…"
-                    else "ส่งออก ZIP สลิปที่ต้องตรวจ ($zipCount)",
-                )
+        if (scanProgress.isActive) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (scanProgress.phase == ScanProgress.Phase.Paused) {
+                    TextButton(onClick = { autoScanCoordinator.resumeScan() }) {
+                        Text("ต่อ")
+                    }
+                } else {
+                    TextButton(onClick = { autoScanCoordinator.pauseScan() }) {
+                        Text("พัก")
+                    }
+                }
+                TextButton(onClick = { autoScanCoordinator.stopScan() }) {
+                    Text("หยุด")
+                }
             }
         }
+    }
 
-        Spacer(modifier = Modifier.height(32.dp))
+    Spacer(modifier = Modifier.height(8.dp))
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    OutlinedButton(
+        onClick = {
+            scope.launch {
+                if (scanning) return@launch
+                if (!hasPhotoPermission) {
+                    onRequestPhotoPermission()
+                    return@launch
+                }
+                if (selectedBucketIds.isEmpty()) return@launch
+                onScanningChange(true)
+                try {
+                    autoScanCoordinator.resetAndScanAllHistory(true)
+                    onScanNowComplete(autoScanCoordinator.queue.value.size)
+                } finally {
+                    onScanningChange(false)
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = canScan,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        IconText(
+            imageVector = Icons.Outlined.History,
+            text = "สแกนย้อนหลังทั้งหมด",
+        )
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = if (selectedBucketIds.isEmpty()) {
+            "เลือกโฟลเดอร์ก่อน แล้วค่อยสแกน"
+        } else {
+            "Scan now = ครบในช่วง 7 วันล่าสุด · " +
+                "สแกนทั้งหมด = ทั้งโฟลเดอร์ ($selectedFolderFileCount ไฟล์) · " +
+                "ทีละชุดสูงสุด ${AutoScanCursor.BATCH_LIMIT} รูป · พัก / หยุด ได้"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = InkMuted,
+    )
+
+    val zipCount = maxOf(reviewQueueSize, exportableReviewSize)
+    if (zipCount > 0) {
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onExportReviewZip,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !zipExporting && !scanning,
+            shape = MaterialTheme.shapes.small,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.CloudUpload,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onBackground,
-            )
             Text(
-                text = "Cloud images",
-                style = MaterialTheme.typography.titleMedium,
+                if (zipExporting) "กำลังสร้าง ZIP…"
+                else "ส่งออก ZIP สลิปที่ต้องตรวจ ($zipCount)",
+            )
+        }
+    }
+}
+
+@Composable
+private fun CloudTab(
+    cloudUploadEnabled: Boolean,
+    cloudinaryConfigured: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.CloudUpload,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            text = "Cloud images",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Cloud upload",
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Cloud upload",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = if (cloudinaryConfigured) {
-                        "Upload slip images to Cloudinary after save"
-                    } else {
-                        "Cloud upload awaits Cloudinary credentials"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkMuted,
-                )
-            }
-            Switch(
-                checked = cloudUploadEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch { cloudUploadStore.setEnabled(enabled) }
+            Text(
+                text = if (cloudinaryConfigured) {
+                    "Upload slip images to Cloudinary after save"
+                } else {
+                    "Cloud upload awaits Cloudinary credentials"
                 },
-                enabled = cloudinaryConfigured,
+                style = MaterialTheme.typography.bodySmall,
+                color = InkMuted,
             )
         }
+        Switch(
+            checked = cloudUploadEnabled,
+            onCheckedChange = onEnabledChange,
+            enabled = cloudinaryConfigured,
+        )
+    }
+}
 
-        Spacer(modifier = Modifier.height(32.dp))
-        HorizontalDivider(color = InkMuted.copy(alpha = 0.3f))
-        Spacer(modifier = Modifier.height(32.dp))
+@Composable
+private fun SessionTab(
+    onSignOut: () -> Unit,
+    onSignOutEverywhere: () -> Unit,
+) {
+    Button(
+        onClick = onSignOut,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        colors = CarbonButtonDefaults.primaryButtonColors(),
+        elevation = CarbonButtonDefaults.primaryButtonElevation(),
+    ) {
+        IconText(
+            imageVector = Icons.AutoMirrored.Outlined.Logout,
+            text = "Sign out",
+        )
+    }
 
-        Button(
-            onClick = {
-                scope.launch {
-                    autoScanCoordinator.clearQueue()
-                    authRepository.logout()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.small,
-            colors = CarbonButtonDefaults.primaryButtonColors(),
-            elevation = CarbonButtonDefaults.primaryButtonElevation(),
-        ) {
-            IconText(
-                imageVector = Icons.AutoMirrored.Outlined.Logout,
-                text = "Sign out",
-            )
-        }
+    Spacer(modifier = Modifier.height(12.dp))
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = {
-                scope.launch {
-                    autoScanCoordinator.clearQueue()
-                    authRepository.logoutAll()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.small,
-        ) {
-            IconText(
-                imageVector = Icons.AutoMirrored.Outlined.Logout,
-                text = "Sign out everywhere",
-            )
-        }
+    OutlinedButton(
+        onClick = onSignOutEverywhere,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+    ) {
+        IconText(
+            imageVector = Icons.AutoMirrored.Outlined.Logout,
+            text = "Sign out everywhere",
+        )
     }
 }

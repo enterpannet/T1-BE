@@ -39,13 +39,15 @@ class SlipOcr(
             val paddleInput = upscaleIfSmall(loaded)
             try {
                 val paddleDoc = paddle.recognizeDocument(paddleInput)
-                if (paddleDoc != null && looksUseful(paddleDoc.text) && hasLikelySlipDate(paddleDoc.text)) {
-                    return@withLock paddleDoc
-                }
                 if (paddleDoc != null && looksUseful(paddleDoc.text)) {
+                    // Don't trust date-looking OCR alone — only short-circuit when parser
+                    // actually recovers spentAt (K+ txn ids with OCR "I" for "1" often fail).
+                    if (parserRecoversSpentAt(paddleDoc)) {
+                        return@withLock paddleDoc
+                    }
                     // Header date is tiny on K+ — second pass on top band only.
                     var enriched = enrichWithTopCropDate(paddleInput, paddleDoc)
-                    if (hasLikelySlipDate(enriched.text)) {
+                    if (parserRecoversSpentAt(enriched)) {
                         return@withLock enriched
                     }
                     val forTess = preprocessForTesseract(paddleInput)
@@ -57,7 +59,7 @@ class SlipOcr(
                     enriched = mergePreferringDate(enriched, tessDoc)
                     return@withLock enriched
                 }
-                Log.i(TAG, "Falling back to Tesseract (paddle empty/weak/no date)")
+                Log.i(TAG, "Falling back to Tesseract (paddle empty/weak)")
                 val forTess = preprocessForTesseract(paddleInput)
                 try {
                     recognizeWithTesseract(forTess)
@@ -73,10 +75,13 @@ class SlipOcr(
 
     /** Prefer Paddle layout/parties; borrow spentAt line coverage from Tess when needed. */
     private fun mergePreferringDate(paddle: OcrDocument, tess: OcrDocument): OcrDocument {
-        if (hasLikelySlipDate(paddle.text) || !hasLikelySlipDate(tess.text)) return paddle
+        if (parserRecoversSpentAt(paddle) || !hasLikelySlipDate(tess.text)) return paddle
         val combined = paddle.text + "\n" + tess.text
         return paddle.copy(text = combined)
     }
+
+    private fun parserRecoversSpentAt(doc: OcrDocument): Boolean =
+        !SlipParser.parse(doc).spentAtIso.isNullOrBlank()
 
     /** Crop top ~28% (status + date) and merge any recovered datetime lines. */
     private suspend fun enrichWithTopCropDate(full: Bitmap, base: OcrDocument): OcrDocument {
@@ -118,7 +123,7 @@ class SlipOcr(
     )
 
     private val kbankTxnIdHint = Regex(
-        """(?i)(?<![0-9A-Z])0?16\d{3}\d{6}[A-Z]{2,4}\d{3,}""",
+        """(?i)(?<![0-9A-Z])[O0]?16[0-9OIl|]{8,}[A-Z0-9OIl|]*""",
     )
 
     private fun recognizeWithTesseract(bitmap: Bitmap): OcrDocument {
