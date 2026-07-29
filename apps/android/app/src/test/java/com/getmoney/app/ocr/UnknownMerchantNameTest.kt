@@ -64,16 +64,18 @@ class UnknownMerchantNameTest {
      *
      * The recipient comes back null when the shop name and the line under it
      * are both Latin and the line below those is a bare numeric biller code.
-     * The real TikTokShop slip has the same first two lines and is read
-     * correctly, so the numeric third line is implicated rather than the Latin
-     * name — plausibly it is taken for the block's leading content, then
-     * rejected as a reference token with no masked account left to fall back
-     * to. Confirm before fixing; the guess is not the finding.
      *
-     * Live examples in the corpus all have an alphanumeric code there
-     * ("683PJPF6ICX4UL6PEUL"), so nothing labelled reproduces it yet, which is
-     * why the accuracy harness stays green. Kept as a test rather than a note
-     * so it surfaces the moment someone works on this path.
+     * Two labelled slips narrow it. The 7-Eleven top-up has exactly this shape
+     * — "บริษัท ทรู มันนี่ จำกัด" over two numeric lines — and reads correctly,
+     * so a numeric line below the name is not the problem. TikTokShop pairs a
+     * Latin name with an alphanumeric code and also reads. It is the two
+     * together that fail, which points at the Latin name losing the party-name
+     * test and nothing numeric being left to fall back on. Still a hypothesis:
+     * confirm before fixing.
+     *
+     * No slip in the corpus reproduces the pair yet, which is why the accuracy
+     * harness stays green. Kept as a test rather than a note so it surfaces the
+     * moment someone works on this path.
      */
     @Ignore("open defect: all-Latin shop name above a bare numeric biller code")
     @Test
