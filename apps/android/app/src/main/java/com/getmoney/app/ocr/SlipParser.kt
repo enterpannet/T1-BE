@@ -1150,8 +1150,20 @@ object SlipParser {
         if (looksLikeBillerOrOrgName(trimmed)) return true
         if (walletPayeeBrandPattern.containsMatchIn(trimmed)) return true
         // Untitled Thai person/org/service (OCR may drop titles; billers can be long)
-        val thai = trimmed.count { it in '\u0E00'..'\u0E7F' }
-        val letters = trimmed.count { it.isLetter() }.coerceAtLeast(1)
+        //
+        // Merchant lines carry a branch or store code after the name \u2014
+        // "\u0E22\u0E32\u0E42\u0E22\u0E2D\u0E34(Y036)-L.RATTANATIBET" \u2014 and counting those Latin letters as
+        // part of the name drags a genuine Thai shop name below the ratio
+        // below, so the recipient ends up read from the operating company on
+        // the next line instead. The code is dropped before measuring; it is
+        // still part of the returned name.
+        val core = trimmed
+            .replace(Regex("""\([^)]*\)"""), "")
+            .replace(Regex("""-\s*[A-Za-z][A-Za-z.\d]*$"""), "")
+            .trim()
+            .ifEmpty { trimmed }
+        val thai = core.count { it in '\u0E00'..'\u0E7F' }
+        val letters = core.count { it.isLetter() }.coerceAtLeast(1)
         if (thai >= 4 && thai * 10 >= letters * 6 && trimmed.length in 4..80) {
             val words = trimmed.split(Regex("""\s+"""))
             if (words.size in 1..8 && !skipPartyLine.containsMatchIn(trimmed)) return true
