@@ -619,8 +619,13 @@ object SlipParser {
             }
         }
 
-        if (!hasExplicitLabels && layoutLines != null && isLikelyKrungthaiSlip(text)) {
-            extractKrungthaiPartiesFromLayout(layoutLines)?.let { return it }
+        if (!hasExplicitLabels && layoutLines != null) {
+            if (isLikelyKrungthaiSlip(text)) {
+                extractKrungthaiPartiesFromLayout(layoutLines)?.let { return it }
+            }
+            if (isLikelyKrungsriSlip(text)) {
+                extractKrungsriPartiesFromLayout(layoutLines)?.let { return it }
+            }
         }
 
         var from = extractPartyNameInline(text, fromLabelPattern)
@@ -731,13 +736,30 @@ object SlipParser {
         val end = (start until rows.size)
             .firstOrNull { krungthaiFieldLabel.containsMatchIn(rows[it].text) }
             ?: return null
-        val region = rows.subList(start, end)
-        if (region.size < 3) return null
+        return partiesFromWidestGap(rows.subList(start, end))
+    }
+
+    /**
+     * Splits a two-party region into sender and recipient at its widest
+     * vertical gap.
+     *
+     * Banks stack the parties as name-first blocks but vary the rows per block
+     * between slip types, so counting rows breaks whenever the layout does.
+     * The whitespace between the blocks is consistently far larger than the
+     * leading between rows of one, which survives those differences — and it
+     * keeps a name that wrapped onto a second row attached to its own block
+     * instead of being cut off.
+     */
+    private fun partiesFromWidestGap(region: List<OcrLine>): Pair<String?, String?>? {
+        // Icons and arrows in the left margin survive OCR as a stray character
+        // on their own row, which would otherwise skew the gaps.
+        val rows = region.filter { it.text.trim().length > 2 }
+        if (rows.size < 3) return null
 
         var boundary = -1
         var widest = 0f
-        for (i in 1 until region.size) {
-            val gap = region[i].yCenter - region[i - 1].yCenter
+        for (i in 1 until rows.size) {
+            val gap = rows[i].yCenter - rows[i - 1].yCenter
             if (gap > widest) {
                 widest = gap
                 boundary = i
@@ -748,7 +770,47 @@ object SlipParser {
         fun join(block: List<OcrLine>) =
             block.joinToString(" · ") { it.text }.takeIf { it.isNotBlank() }
 
-        return join(region.subList(0, boundary)) to join(region.subList(boundary, region.size))
+        return join(rows.subList(0, boundary)) to join(rows.subList(boundary, rows.size))
+    }
+
+    /**
+     * Krungsri, which labels its id "หมายเลขอ้างอิง" and prints it at the foot of
+     * the slip rather than under the header like Krungthai.
+     */
+    internal fun isLikelyKrungsriSlip(text: String): Boolean {
+        if (Regex("""krungsri""", RegexOption.IGNORE_CASE).containsMatchIn(text)) return true
+        // OCR frequently reads ศ as ค in the Thai logo.
+        if (Regex("""กรุง[ศค]รี""").containsMatchIn(text)) return true
+        return text.contains("หมายเลขอ้างอิง") && text.contains("THB")
+    }
+
+    /** Everything above the parties: title, logo, timestamp, the MUFG strapline. */
+    private val krungsriHeaderLine = Regex(
+        """krungsri|กรุง[ศค]รี|MUFG|สำเร็จ|Scan\s*to\s*Pay|\d{1,2}\s+\S+\s+25\d{2}""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val krungsriFieldLabel = Regex("""จำนวนเงิน|ค่าธรรมเนียม|รหัสร้านค้า|เบอร์มือถือ""")
+
+    private fun extractKrungsriPartiesFromLayout(
+        layoutLines: List<OcrLine>,
+    ): Pair<String?, String?>? {
+        val rows = layoutLines
+            .map { it.copy(text = normalizeOcrText(it.text).lines().firstOrNull()?.trim().orEmpty()) }
+            .filter { it.text.isNotEmpty() }
+            .sortedWith(compareBy({ it.yCenter }, { it.xLeft }))
+        if (rows.size < 4) return null
+
+        val headerEnd = rows.indexOfLast { krungsriHeaderLine.containsMatchIn(it.text) }
+        if (headerEnd < 0) return null
+        val start = headerEnd + 1
+
+        val end = (start until rows.size)
+            .firstOrNull { krungsriFieldLabel.containsMatchIn(rows[it].text) }
+            ?: return null
+        if (end <= start) return null
+
+        return partiesFromWidestGap(rows.subList(start, end))
     }
 
     internal fun isLikelyKbankSlip(text: String): Boolean {
