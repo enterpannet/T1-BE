@@ -1,0 +1,13 @@
+# Real bank slips: full names, account numbers, amounts, transaction ids.
+# Kept out of the repo — the OCR tooling under tools/ reads them locally.
+/slip/
+
+# Derived from slip/, so they carry the same personal data.
+/apps/android/app/src/test/resources/slip_ocr_dump.json
+/tools/slip_labels.json
+
+# Local Gradle home used by the build scripts in this repo.
+/.gradle-home/
+
+# Built APKs are published from CI/Caddy, not tracked here.
+/*.apk

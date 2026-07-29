@@ -52,6 +52,44 @@ object EmvQrParser {
         )
     }
 
+    /**
+     * KBank / K+ slip-verification QRs carry the printed เลขที่รายการ inside a
+     * proprietary payload that [parse] rejects — it has no tag 54/59/62, so
+     * every field it looks for comes back null and the whole payload is dropped.
+     *
+     * The id is worth rescuing on its own: OCR reads the three-letter block in
+     * `016…AOR07270` as digits (`A0R`), which corrupts the reference we store
+     * and makes it useless for looking the transaction up with the bank. The QR
+     * is machine-readable, so its copy is authoritative.
+     *
+     * Format: `016` + 9 digits (day-of-year + HHMMSS) + either a 3-letter type
+     * code with a 5-digit sequence, or a bare 6-digit sequence on top-up slips.
+     */
+    private val kbankTxnIdInPayload = Regex("""016\d{9}(?:[A-Z]{3}\d{5}|\d{6})""")
+
+    fun extractSlipReference(payload: String): String? {
+        if (isPromptPayQr(payload)) return null
+        return kbankTxnIdInPayload.find(payload.trim())?.value
+    }
+
+    /**
+     * PromptPay application id (`A0000006770101xx`), as carried in the merchant
+     * account template of a PromptPay QR.
+     */
+    private val promptPayAid = Regex("""A0000006770101\d""")
+
+    /**
+     * True for the payee-account QR that slips print alongside the real
+     * verification QR, so the payer can transfer again.
+     *
+     * It describes an account, not this transaction: any amount on it is a
+     * request to pay, never proof that a payment happened. Reading a reference
+     * or an amount out of it would attribute the wrong figures to the slip, so
+     * slip intake skips these payloads entirely.
+     */
+    fun isPromptPayQr(payload: String): Boolean =
+        promptPayAid.containsMatchIn(payload.trim())
+
     fun toSlipDraft(result: Result, bankHint: String? = null): SlipDraft? {
         val amount = result.amount ?: return null
         val toName = result.merchantName?.takeIf { it.isNotBlank() }

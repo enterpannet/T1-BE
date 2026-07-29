@@ -1264,7 +1264,7 @@ object SlipParser {
             val hour = match.groupValues[4].padStart(2, '0')
             val minute = match.groupValues[5]
             val second = match.groupValues.getOrNull(6)?.ifBlank { null } ?: "00"
-            return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+            slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
         }
 
         // K+ เลขที่รายการ encodes day-of-year + HHMMSS (016185192458BPM…)
@@ -1287,11 +1287,16 @@ object SlipParser {
             val hour = m.groupValues[4].padStart(2, '0')
             val minute = m.groupValues[5]
             val second = m.groupValues.getOrNull(6)?.ifBlank { null } ?: "00"
-            return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+            slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
         }
 
         // Month OCR totally gone: "4 n.. 69 19:24" / "1 .. 69 01:05"
         extractSpentAtFromLooseDayYearTime(text)?.let { return it }
+
+        // Gallery filename hints (appended by withFileNameHint) carry a full
+        // timestamp, so they outrank the date-only strategies below.
+        extractSpentAtFromYmdHmsToken(text)?.let { return it }
+        extractSpentAtFromEpochMillis(text)?.let { return it }
 
         // Krungsri embeds YYYYMMDD in refs (e.g. 20260718160642407530) when month OCR fails.
         extractSpentAtFromEmbeddedYmd(text)?.let { return it }
@@ -1445,7 +1450,7 @@ object SlipParser {
         val hour = match.groupValues[4].padStart(2, '0')
         val minute = match.groupValues[5]
         val second = match.groupValues.getOrNull(6)?.ifBlank { null } ?: "00"
-        return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+        return slipTimestampOrNull(year, month, day, hour, minute, second)
     }
 
     private fun extractOcrGarbledMonthDatePlusNearbyTime(text: String): String? {
@@ -1461,7 +1466,7 @@ object SlipParser {
                 val hour = yt.groupValues[2].padStart(2, '0')
                 val minute = yt.groupValues[3]
                 val second = yt.groupValues.getOrNull(4)?.ifBlank { null } ?: "00"
-                return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+                slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
             }
         }
         return null
@@ -1488,6 +1493,61 @@ object SlipParser {
         }
     }
 
+    /**
+     * `YYYYMMDD_HHMMSS` / `YYYYMMDDHHMMSS`, as K+ and Krungsri write into the
+     * saved filename (`004999006314305_20260604_182602`). Unlike the plain
+     * YYYYMMDD strategy this recovers the clock too, so the transaction lands
+     * at the right time of day rather than at midnight.
+     */
+    private val ymdHmsTokenPattern = Regex(
+        """(?<!\d)(20[2-3]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[_\-]?""" +
+            """([01]\d|2[0-3])([0-5]\d)([0-5]\d)(?!\d)""",
+    )
+
+    private fun extractSpentAtFromYmdHmsToken(text: String): String? {
+        val m = ymdHmsTokenPattern.find(text) ?: return null
+        return slipTimestampOrNull(
+            m.groupValues[1],
+            m.groupValues[2],
+            m.groupValues[3],
+            m.groupValues[4],
+            m.groupValues[5],
+            m.groupValues[6],
+        )
+    }
+
+    /**
+     * Krungthai NEXT names its saved slips with the epoch-millisecond
+     * timestamp (`1780401364698.jpg`) and puts no clock on the slip itself.
+     *
+     * Only a line that is *nothing but* the number is accepted: withFileNameHint
+     * appends the filename stem as its own line, so this keeps a stray 13-digit
+     * account or reference number in the OCR body from being read as a date.
+     */
+    private val epochMillisLinePattern = Regex("""^(1[5-8]\d{11})$""")
+
+    private fun extractSpentAtFromEpochMillis(text: String): String? {
+        for (line in text.lines()) {
+            val match = epochMillisLinePattern.find(line.trim()) ?: continue
+            val millis = match.groupValues[1].toLongOrNull() ?: continue
+            val local = try {
+                java.time.Instant.ofEpochMilli(millis).atZone(BANGKOK)
+            } catch (_: DateTimeException) {
+                continue
+            }
+            if (local.year !in MIN_SLIP_YEAR..MAX_SLIP_YEAR) continue
+            return "%04d-%02d-%02dT%02d:%02d:%02d+07:00".format(
+                local.year,
+                local.monthValue,
+                local.dayOfMonth,
+                local.hour,
+                local.minute,
+                local.second,
+            )
+        }
+        return null
+    }
+
     /** YYYYMMDD inside Krungsri reference numbers; time from nearby clock if present. */
     private fun extractSpentAtFromEmbeddedYmd(text: String): String? {
         val longRef = Regex("""(?<!\d)(20[2-3]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{6,}(?!\d)""")
@@ -1502,7 +1562,7 @@ object SlipParser {
         val hour = headerTime?.groupValues?.get(1)?.padStart(2, '0') ?: "00"
         val minute = headerTime?.groupValues?.get(2) ?: "00"
         val second = headerTime?.groupValues?.getOrNull(3)?.ifBlank { null } ?: "00"
-        return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+        return slipTimestampOrNull(year, month, day, hour, minute, second)
     }
 
     private val thaiMonthDateOnlyPattern = Regex(
@@ -1544,7 +1604,7 @@ object SlipParser {
                 val hour = yt.groupValues[2].padStart(2, '0')
                 val minute = yt.groupValues[3]
                 val second = yt.groupValues.getOrNull(4)?.ifBlank { null } ?: "00"
-                return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+                slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
             }
 
             // "4" + "ก.ค. 69 19:24 น."
@@ -1558,7 +1618,7 @@ object SlipParser {
                     val hour = m.groupValues[3].padStart(2, '0')
                     val minute = m.groupValues[4]
                     val second = m.groupValues.getOrNull(5)?.ifBlank { null } ?: "00"
-                    return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+                    slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
                 }
             }
 
@@ -1578,7 +1638,7 @@ object SlipParser {
             val hour = timeMatch.groupValues[1].padStart(2, '0')
             val minute = timeMatch.groupValues[2]
             val second = timeMatch.groupValues.getOrNull(3)?.ifBlank { null } ?: "00"
-            return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+            slipTimestampOrNull(year, month, day, hour, minute, second)?.let { return it }
         }
         return null
     }
@@ -1591,7 +1651,7 @@ object SlipParser {
         val hour = match.groupValues[4].padStart(2, '0')
         val minute = match.groupValues[5]
         val second = match.groupValues.getOrNull(6)?.ifBlank { null } ?: "00"
-        return "$year-$month-${day}T$hour:$minute:${second.padStart(2, '0')}+07:00"
+        return slipTimestampOrNull(year, month, day, hour, minute, second)
     }
 
     private fun normalizeThaiMonthToken(token: String): String? {
@@ -1611,6 +1671,52 @@ object SlipParser {
             compact.startsWith("ธค") || compact.startsWith("ธ.ค") -> "ธ.ค."
             else -> null
         }
+    }
+
+    /**
+     * Builds the slip timestamp, or null when the pieces don't form a real one.
+     *
+     * OCR routinely glues the year to the clock — "13 มิ.ย. 6917:15 น." — and a
+     * greedy year group then reads that as year 691 at 07:15. Rejecting the
+     * implausible year lets [extractSpentAt] fall through to a later strategy
+     * (usually the K+ txn id, which carries the same timestamp unambiguously)
+     * instead of writing a year-691 transaction.
+     */
+    /** Plausible Gregorian years for a bank slip; anything outside is OCR noise. */
+    private const val MIN_SLIP_YEAR = 2000
+    private const val MAX_SLIP_YEAR = 2100
+
+    private val BANGKOK: ZoneId = ZoneId.of("Asia/Bangkok")
+
+    private fun slipTimestampOrNull(
+        year: String,
+        month: String,
+        day: String,
+        hour: String,
+        minute: String,
+        second: String,
+    ): String? {
+        val y = year.toIntOrNull() ?: return null
+        if (y !in MIN_SLIP_YEAR..MAX_SLIP_YEAR) return null
+        val mo = month.toIntOrNull() ?: return null
+        val d = day.toIntOrNull() ?: return null
+        val h = hour.toIntOrNull() ?: return null
+        val mi = minute.toIntOrNull() ?: return null
+        val s = second.toIntOrNull() ?: return null
+        if (h !in 0..23 || mi !in 0..59 || s !in 0..59) return null
+        val date = try {
+            LocalDate.of(y, mo, d)
+        } catch (_: DateTimeException) {
+            return null
+        }
+        return "%04d-%02d-%02dT%02d:%02d:%02d+07:00".format(
+            date.year,
+            date.monthValue,
+            date.dayOfMonth,
+            h,
+            mi,
+            s,
+        )
     }
 
     private fun normalizeYear(raw: String): String {

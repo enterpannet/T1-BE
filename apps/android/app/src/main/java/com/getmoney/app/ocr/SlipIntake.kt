@@ -29,12 +29,22 @@ class SlipIntake(
         val identity = runCatching { myIdentityStore?.getIdentity() }.getOrNull()
 
         val payloads = runCatching { qrScanner.scanPayloads(uri) }.getOrDefault(emptyList())
+
+        // Reference straight off the QR. Preferred over whatever OCR read for
+        // the same field: the QR is machine-readable, while OCR reliably
+        // confuses O and 0 inside K+ transaction ids.
+        val qrRef = payloads.firstNotNullOfOrNull { payload ->
+            EmvQrParser.parse(payload)?.reference?.takeIf { it.isNotBlank() }
+                ?: EmvQrParser.extractSlipReference(payload)
+        }
+
         for (payload in payloads) {
             val parsed = EmvQrParser.parse(payload) ?: continue
             val qrDraft = EmvQrParser.toSlipDraft(parsed) ?: continue
             val doc = runCatching { ocr.recognizeDocument(uri) }.getOrNull()
             val ocrDraft = doc?.let { SlipParser.parse(withUriNameHint(it, uri)) }
             val merged = enrichSlipDraftFromOcr(qrDraft, ocrDraft)
+                .let { if (!qrRef.isNullOrBlank()) it.copy(reference = qrRef) else it }
             return Outcome(
                 draft = MyIdentityDirection.applyToDraft(merged, identity),
                 source = Source.Qr,
@@ -43,13 +53,9 @@ class SlipIntake(
             )
         }
 
-        val qrRef = payloads.firstNotNullOfOrNull { payload ->
-            EmvQrParser.parse(payload)?.reference
-        }
-
         val doc = ocr.recognizeDocument(uri)
         val draft = SlipParser.parse(withUriNameHint(doc, uri)).let { parsed ->
-            val withRef = if (parsed.reference.isNullOrBlank() && !qrRef.isNullOrBlank()) {
+            val withRef = if (!qrRef.isNullOrBlank()) {
                 parsed.copy(reference = qrRef)
             } else {
                 parsed
