@@ -88,8 +88,19 @@ class SlipFieldAccuracyTest {
      */
     private val thaiCombining = Regex("[ัิ-ฺ็-๎]")
 
+    /**
+     * บมจ. is the standard abbreviation of บริษัท … จำกัด (มหาชน), and the parser
+     * canonicalises to it on purpose. Folding both to the short form compares
+     * the company that was actually captured rather than how it was spelled.
+     */
+    private fun foldCompanyForm(s: String): String =
+        s.replace("บริษัท", "บมจ.").replace("(มหาชน)", "").replace("จำกัด", "")
+
     private fun looseNameMatches(got: String?, want: String?): Boolean {
-        fun fold(s: String?) = thaiCombining.replace(normalizeName(s), "")
+        // Company folding runs first: it matches whole Thai words, which
+        // stripping the combining marks would break apart.
+        fun fold(s: String?) =
+            thaiCombining.replace(foldCompanyForm(normalizeName(s)), "")
         val w = fold(want)
         if (w.isEmpty()) return fold(got).isEmpty()
         return fold(got).contains(w)

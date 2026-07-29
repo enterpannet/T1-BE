@@ -415,6 +415,19 @@ object SlipParser {
             .trim()
     }
 
+    /**
+     * ISO codes seen on Thai exchange and travel slips. THB is deliberately
+     * absent — a baht figure is the one we want.
+     */
+    private const val FOREIGN_CURRENCY_CODES =
+        "JPY|USD|EUR|CNY|GBP|AUD|SGD|HKD|KRW|TWD|MYR|VND|CHF|CAD|NZD|INR|PHP|IDR|LAK|KHR|MMK|AED"
+
+    private fun foreignCurrencyAfter(rawNumber: String): Regex =
+        Regex(
+            """${Regex.escape(rawNumber)}\s*(?:$FOREIGN_CURRENCY_CODES)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+
     private fun extractAmount(text: String): String {
         val lines = text.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return "0"
@@ -472,6 +485,13 @@ object SlipParser {
                 } else {
                     score -= 20
                 }
+
+                // A figure quoted in another currency is never what left the
+                // account. Exchange slips print both — "จำนวนเงินที่ซื้อ 814.50
+                // CNY" against "แปลงเป็นเงิน 4,000.01 บาท" — and the foreign one
+                // sits under the stronger amount keyword, so it outscores the
+                // baht line on every other signal. This has to override them.
+                if (foreignCurrencyAfter(rawNumber).containsMatchIn(line)) score -= 300
 
                 candidates += Candidate(value, score)
             }
