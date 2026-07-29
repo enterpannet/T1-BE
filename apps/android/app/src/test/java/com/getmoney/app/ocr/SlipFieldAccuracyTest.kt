@@ -231,23 +231,6 @@ class SlipFieldAccuracyTest {
         const val MIN_DIRECTION_ACCURACY = 95.0
         const val MIN_FROM_NAME_ACCURACY = 90.0
 
-        /**
-         * Lower than from_name against a known, unfixed defect — not an
-         * accepted quality level.
-         *
-         * Sampling across K+ transaction types surfaced four merchant slips
-         * whose recipient is not predominantly Thai: "4275 บู๊ทส์ ยูเนี่ยนมอลล์"
-         * opens with digits, "GamsGo Powered by Alipay+" has no Thai at all,
-         * and "CJ 0898 ติวานนท์ 25" and "SCB มณี SHOP (ไอทีโซลูชั่น)" mix scripts.
-         * The party-name test is tuned for Thai personal and company names, so
-         * two fall back to the operating company on the line below and two
-         * return no recipient at all.
-         *
-         * The fix belongs in how the K+ recipient block chooses its display
-         * line — position is a better signal than orthography there — and that
-         * path carries 81% of the corpus, so it wants its own change. Raise
-         * this back to 90 with it.
-         */
-        const val MIN_TO_NAME_ACCURACY = 85.0
+        const val MIN_TO_NAME_ACCURACY = 90.0
     }
 }

@@ -914,9 +914,39 @@ object SlipParser {
             from = extractNameLines(fromText).firstOrNull()
                 ?: extractAllMaskedAccounts(fromText).firstOrNull()
         }
+
+        // The bank prints a merchant's display name on the first line of the
+        // recipient block and the operating company beneath it. Position
+        // identifies it far more reliably than orthography does: shop names
+        // open with digits ("4275 บู๊ทส์ ยูเนี่ยนมอลล์"), carry no Thai at all
+        // ("GamsGo Powered by Alipay+"), or mix scripts ("SCB มณี SHOP (…)"),
+        // and the name test — tuned for Thai personal and company names —
+        // rejects them, leaving either the company below or no recipient.
+        if (toText.isNotBlank()) {
+            firstPartyContentLine(toText)?.let { cleanPartyName(it) }?.let { head ->
+                to = when {
+                    to == null -> head
+                    to!!.startsWith(head) -> to
+                    else -> "$head · ${to!!}"
+                }
+            }
+        }
+
         if (from == null && to == null) return null
         return from to to
     }
+
+    /** First line of a party block that carries a name rather than metadata. */
+    private fun firstPartyContentLine(text: String): String? =
+        text.lines().map { it.trim() }.firstOrNull { line ->
+            line.isNotEmpty() &&
+                !isPartyMetaLine(line) &&
+                !partyNoiseLine.matches(line) &&
+                !isMaskedAccount(line) &&
+                !isBankOnlyLine(line) &&
+                !looksLikeTxnOrRefToken(line) &&
+                line.any { it.isLetter() }
+        }
 
     /** When to-block is only biller name + refs (no bank mask). */
     private fun extractBillerOnlyDisplay(text: String): String? {
