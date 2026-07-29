@@ -619,6 +619,10 @@ object SlipParser {
             }
         }
 
+        if (!hasExplicitLabels && layoutLines != null && isLikelyKrungthaiSlip(text)) {
+            extractKrungthaiPartiesFromLayout(layoutLines)?.let { return it }
+        }
+
         var from = extractPartyNameInline(text, fromLabelPattern)
         var to = extractPartyNameInline(text, toLabelPattern)
 
@@ -673,6 +677,78 @@ object SlipParser {
         }
 
         return from to to
+    }
+
+    /**
+     * Krungthai NEXT, distinguished from a KBank slip that merely *pays* a
+     * Krungthai account: the Latin logo and the "รหัสอ้างอิง" label both belong
+     * to Krungthai's own layout, whereas KBank labels its id "เลขที่รายการ" and
+     * Krungsri uses "หมายเลขอ้างอิง".
+     */
+    internal fun isLikelyKrungthaiSlip(text: String): Boolean {
+        if (Regex("""Krungthai""", RegexOption.IGNORE_CASE).containsMatchIn(text)) return true
+        return text.contains("รหัสอ้างอิง") && text.contains("กรุงไทย")
+    }
+
+    /** Starts the party region: everything above is the header and the reference. */
+    private val krungthaiReferenceLabel = Regex("""รหัส\s*อ้างอิง""")
+
+    /** Ends it: the first money or bookkeeping row below the recipient block. */
+    private val krungthaiFieldLabel = Regex(
+        """จำนวนเงิน|เลขที่\s*อ้างอิง|ค่าธรรมเนียม|วันที่ทำรายการ|อัตราแลกเปลี่ยน|แปลงเป็นเงิน""",
+    )
+
+    /** A bare token — a reference value on its own row, not somebody's name. */
+    private fun isKrungthaiRefValueRow(line: String): Boolean =
+        Regex("""^[A-Z]?\d[\dA-Z]{6,}$""").matches(line.trim())
+
+    /**
+     * Krungthai stacks the two parties as name-first blocks, but the number of
+     * rows per block varies by slip type — a currency row appears on exchange
+     * slips, and a bill's payee has no bank row at all — so counting rows from
+     * the top lands on the wrong line as soon as the layout changes.
+     *
+     * The blocks are separated by noticeably more whitespace than the rows
+     * within one, on every layout seen (about 130-180px against 65-85px), so
+     * the widest vertical gap in the region is the boundary. That holds without
+     * knowing which kind of slip this is.
+     */
+    private fun extractKrungthaiPartiesFromLayout(
+        layoutLines: List<OcrLine>,
+    ): Pair<String?, String?>? {
+        val rows = layoutLines
+            .map { it.copy(text = normalizeOcrText(it.text).lines().firstOrNull()?.trim().orEmpty()) }
+            .filter { it.text.isNotEmpty() }
+            .sortedWith(compareBy({ it.yCenter }, { it.xLeft }))
+        if (rows.size < 4) return null
+
+        val refIdx = rows.indexOfFirst { krungthaiReferenceLabel.containsMatchIn(it.text) }
+        if (refIdx < 0) return null
+        var start = refIdx + 1
+        // The reference value sometimes wraps onto its own row.
+        while (start < rows.size && isKrungthaiRefValueRow(rows[start].text)) start++
+
+        val end = (start until rows.size)
+            .firstOrNull { krungthaiFieldLabel.containsMatchIn(rows[it].text) }
+            ?: return null
+        val region = rows.subList(start, end)
+        if (region.size < 3) return null
+
+        var boundary = -1
+        var widest = 0f
+        for (i in 1 until region.size) {
+            val gap = region[i].yCenter - region[i - 1].yCenter
+            if (gap > widest) {
+                widest = gap
+                boundary = i
+            }
+        }
+        if (boundary <= 0) return null
+
+        fun join(block: List<OcrLine>) =
+            block.joinToString(" · ") { it.text }.takeIf { it.isNotBlank() }
+
+        return join(region.subList(0, boundary)) to join(region.subList(boundary, region.size))
     }
 
     internal fun isLikelyKbankSlip(text: String): Boolean {
