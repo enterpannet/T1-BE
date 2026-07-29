@@ -70,6 +70,24 @@ class SlipFieldAccuracyTest {
         return normalizeName(got).contains(w)
     }
 
+    /**
+     * Thai combining marks — tone marks, the vowel signs that sit above and
+     * below the consonant, and the การันต์ that silences one.
+     *
+     * OCR drops these far more often than it drops a base letter, and losing
+     * one rarely changes who a name refers to: เกียรติศักดิ still reads as
+     * เกียรติศักดิ์. Scoring with and without them separates "picked the wrong
+     * party", which matters, from "lost a diacritic", which mostly doesn't.
+     */
+    private val thaiCombining = Regex("[ัิ-ฺ็-๎]")
+
+    private fun looseNameMatches(got: String?, want: String?): Boolean {
+        fun fold(s: String?) = thaiCombining.replace(normalizeName(s), "")
+        val w = fold(want)
+        if (w.isEmpty()) return fold(got).isEmpty()
+        return fold(got).contains(w)
+    }
+
     @Test
     fun amountDirectionAndPartiesAgainstHandReadLabels() {
         val stream = javaClass.classLoader?.getResourceAsStream("slip_ocr_dump.json")
@@ -89,6 +107,8 @@ class SlipFieldAccuracyTest {
         var directionScored = 0
         var fromOk = 0
         var toOk = 0
+        var fromLooseOk = 0
+        var toLooseOk = 0
         val misses = mutableListOf<String>()
 
         for (slip in labelled) {
@@ -118,13 +138,16 @@ class SlipFieldAccuracyTest {
                 }
             }
 
-            if (nameMatches(draft.fromName, label.fromName)) {
-                fromOk++
+            if (nameMatches(draft.fromName, label.fromName)) fromOk++
+            if (nameMatches(draft.toName, label.toName)) toOk++
+
+            if (looseNameMatches(draft.fromName, label.fromName)) {
+                fromLooseOk++
             } else {
                 misses += "[from] ${slip.file}: got=${draft.fromName} want=${label.fromName}"
             }
-            if (nameMatches(draft.toName, label.toName)) {
-                toOk++
+            if (looseNameMatches(draft.toName, label.toName)) {
+                toLooseOk++
             } else {
                 misses += "[to] ${slip.file}: got=${draft.toName} want=${label.toName}"
             }
@@ -142,8 +165,18 @@ class SlipFieldAccuracyTest {
                 )
             )
         }
-        println(String.format("from_name  %2d/%2d  %5.1f%%", fromOk, n, 100.0 * fromOk / n))
-        println(String.format("to_name    %2d/%2d  %5.1f%%", toOk, n, 100.0 * toOk / n))
+        println(
+            String.format(
+                "from_name  %2d/%2d  %5.1f%%   ignoring Thai diacritics: %2d/%2d  %5.1f%%",
+                fromOk, n, 100.0 * fromOk / n, fromLooseOk, n, 100.0 * fromLooseOk / n,
+            )
+        )
+        println(
+            String.format(
+                "to_name    %2d/%2d  %5.1f%%   ignoring Thai diacritics: %2d/%2d  %5.1f%%",
+                toOk, n, 100.0 * toOk / n, toLooseOk, n, 100.0 * toLooseOk / n,
+            )
+        )
 
         if (misses.isNotEmpty()) {
             println("\nmisses:")
