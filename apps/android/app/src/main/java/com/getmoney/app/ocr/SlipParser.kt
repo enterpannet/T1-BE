@@ -279,7 +279,64 @@ object SlipParser {
         )
     }
 
+    /**
+     * OCR emits one box per visual run, so a single printed line arrives split:
+     * a label and its value ("แปลงเป็นเงิน" / "4,000.06" / "บาท") land in three
+     * boxes, and a name that straddles a gap ("นายเกียรติศักดิ์" / "พิมพ์อาภรณ์")
+     * lands in two. Joining the text in box order then reads a label without
+     * its value, and one person as two.
+     *
+     * Regrouping boxes by row restores the printed line, which is what the
+     * field patterns are written against.
+     */
+    internal fun mergeRows(lines: List<OcrLine>): List<OcrLine> {
+        if (lines.size < 2) return lines
+        val sorted = lines.sortedWith(compareBy({ it.yCenter }, { it.xLeft }))
+
+        // Slips vary in resolution, so the row tolerance scales with the page
+        // rather than being a fixed pixel count. The bounds keep it sane on
+        // very short crops and very tall screenshots alike.
+        val span = sorted.last().yCenter - sorted.first().yCenter
+        val tolerance = (span * 0.012f).coerceIn(4f, 24f)
+
+        val rows = mutableListOf<MutableList<OcrLine>>()
+        for (line in sorted) {
+            val row = rows.lastOrNull()
+            if (row != null && line.yCenter - row.first().yCenter <= tolerance) {
+                row += line
+            } else {
+                rows += mutableListOf(line)
+            }
+        }
+
+        return rows.map { row ->
+            val ordered = row.sortedBy { it.xLeft }
+            OcrLine(
+                text = ordered.joinToString(" ") { it.text },
+                yCenter = ordered.first().yCenter,
+                xLeft = ordered.first().xLeft,
+                confidence = ordered.minOf { it.confidence },
+            )
+        }
+    }
+
     fun parse(document: OcrDocument): SlipDraft {
+        val rows = mergeRows(document.lines)
+        if (rows.size != document.lines.size) {
+            // document.text can carry content that never came from a box —
+            // SlipIntake appends the gallery filename to it as a hint. Rebuild
+            // from rows, then re-append whatever the boxes don't account for,
+            // or that hint is silently dropped.
+            val boxTexts = document.lines.mapTo(mutableSetOf()) { it.text.trim() }
+            val extras = document.text.lines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it !in boxTexts }
+            val merged = (rows.map { it.text } + extras).joinToString("\n")
+            val fromRows = parse(merged, rows)
+            if (fromRows.amount.isNotBlank() || !fromRows.spentAtIso.isNullOrBlank()) {
+                return fromRows
+            }
+        }
         val primary = parse(document.text, document.lines)
         if (!primary.spentAtIso.isNullOrBlank()) return primary
         // Paddle sometimes emits lines out of string-join order; recover date from Y-sorted lines.

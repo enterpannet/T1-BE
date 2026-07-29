@@ -9,5 +9,7 @@
 # Local Gradle home used by the build scripts in this repo.
 /.gradle-home/
 
+__pycache__/
+
 # Built APKs are published from CI/Caddy, not tracked here.
 /*.apk
