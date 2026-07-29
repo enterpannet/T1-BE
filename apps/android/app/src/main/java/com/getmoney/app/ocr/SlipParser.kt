@@ -309,8 +309,25 @@ object SlipParser {
             }
         }
 
+        // Slips put a bank or merchant logo in a narrow column to the left of
+        // the party block, and OCR reads it as a stray "K+" or "1". Merged into
+        // the row it prefixes the recipient's name.
+        //
+        // A wide gap alone can't identify it — a label and its value sit far
+        // apart on the same row too ("แปลงเป็นเงิน" … "4,000.06") — so this also
+        // requires the fragment to be a character or two, which no field label
+        // ever is.
+        val pageWidth = sorted.maxOf { it.xLeft }
+        val logoGap = pageWidth * 0.10f
+
         return rows.map { row ->
-            val ordered = row.sortedBy { it.xLeft }
+            val ordered = row.sortedBy { it.xLeft }.toMutableList()
+            while (ordered.size > 1 &&
+                ordered[0].text.length <= 2 &&
+                ordered[1].xLeft - ordered[0].xLeft > logoGap
+            ) {
+                ordered.removeAt(0)
+            }
             OcrLine(
                 text = ordered.joinToString(" ") { it.text },
                 yCenter = ordered.first().yCenter,

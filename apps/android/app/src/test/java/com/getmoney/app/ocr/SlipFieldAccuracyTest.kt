@@ -55,8 +55,14 @@ class SlipFieldAccuracyTest {
             engine = OcrDocument.Engine.Paddle,
         )
 
+    /**
+     * "·" is how the parser joins the parts of a party block, including a name
+     * that wrapped onto a second printed line. It's presentation, not content,
+     * so it's dropped before comparing — otherwise a name the parser captured
+     * in full scores as a miss purely because of the separator.
+     */
     private fun normalizeName(value: String?): String =
-        value.orEmpty().replace(Regex("""\s+"""), "").lowercase()
+        value.orEmpty().replace(Regex("""[\s·]+"""), "").lowercase()
 
     /**
      * The parser deliberately returns the whole party block — name, bank, and
