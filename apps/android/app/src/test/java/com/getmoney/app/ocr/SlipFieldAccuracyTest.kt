@@ -3,6 +3,7 @@ package com.getmoney.app.ocr
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import java.math.BigDecimal
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -188,5 +189,35 @@ class SlipFieldAccuracyTest {
             println("\nmisses:")
             misses.forEach { println("  $it") }
         }
+
+        // Floors, not targets. Measured at 100% amount, 100% direction, and
+        // 31/32 on both names over the labelled set; the gap left below is for
+        // labelling a slip the parser has never seen, not for losing ground on
+        // these. Names are scored ignoring Thai diacritics because OCR drops
+        // those without changing which party a name refers to.
+        assertTrue(
+            "amount regressed: $amountOk/$n",
+            100.0 * amountOk / n >= MIN_AMOUNT_ACCURACY,
+        )
+        if (directionScored > 0) {
+            assertTrue(
+                "direction regressed: $directionOk/$directionScored",
+                100.0 * directionOk / directionScored >= MIN_DIRECTION_ACCURACY,
+            )
+        }
+        assertTrue(
+            "from_name regressed: $fromLooseOk/$n",
+            100.0 * fromLooseOk / n >= MIN_NAME_ACCURACY,
+        )
+        assertTrue(
+            "to_name regressed: $toLooseOk/$n",
+            100.0 * toLooseOk / n >= MIN_NAME_ACCURACY,
+        )
+    }
+
+    private companion object {
+        const val MIN_AMOUNT_ACCURACY = 95.0
+        const val MIN_DIRECTION_ACCURACY = 95.0
+        const val MIN_NAME_ACCURACY = 90.0
     }
 }
